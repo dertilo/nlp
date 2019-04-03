@@ -10,7 +10,8 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import LabelEncoder
 
-from text_classification.data_readers import get_20newsgroups_data
+from text_classification.data_readers import get_20newsgroups_data, get_GermEval2017_TaskB_data
+import re
 
 
 def encode_targets(data_train,data_test):
@@ -50,16 +51,43 @@ def benchmark(clf):
             'test-time':np.round(test_time,3)}
 
 
-if __name__ == '__main__':
-    data_train = get_20newsgroups_data('train')
-    data_test = get_20newsgroups_data('test')
+def identity_dummy_method(x):
+    '''
+    just to fool the scikit-learn vectorizer
+    '''
+    return x
 
-    vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.75, min_df=2, max_features=30000,
-                                 stop_words='english')
-    X_train = vectorizer.fit_transform([text for text, _ in data_train])
+def get_nrams(string, min_n=3, max_n=5):
+    return [string[k:k + ngs] for ngs in range(min_n, max_n + 1) for k in range(len(string) - ngs)]
+
+def regex_tokenizer(text, pattern=r"(?u)\b\w\w+\b"):# pattern stolen from scikit-learn
+    return [m.group() for m in re.finditer(pattern, text)]
+
+def text_to_bow(text):
+    return regex_tokenizer(text)
+
+if __name__ == '__main__':
+    # data_train = get_20newsgroups_data('train')
+    # data_test = get_20newsgroups_data('test')
+
+    def convert_GermEval2017_data(d):
+        return d['text'],d['sentiment']
+
+    data_train = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/train_v1.4.tsv')]
+    data_test = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/test_TIMESTAMP1.tsv')]
+
+    vectorizer = TfidfVectorizer(sublinear_tf=True,
+                                 preprocessor=identity_dummy_method,
+                                 tokenizer=identity_dummy_method,
+                                 ngram_range=(1, 1),
+                                 max_df=0.75, min_df=2,
+                                 max_features=30000,
+                                 stop_words=None#'english'
+                                 )
+    X_train = vectorizer.fit_transform([text_to_bow(text) for text, _ in data_train])
     print("n_samples: %d, n_features: %d" % X_train.shape)
 
-    X_test = vectorizer.transform([text for text, _ in data_test])
+    X_test = vectorizer.transform([text_to_bow(text) for text, _ in data_test])
     print("n_samples: %d, n_features: %d" % X_test.shape)
 
     pprint(Counter([label for _, label in data_train]))
@@ -68,4 +96,4 @@ if __name__ == '__main__':
 
     benchmark(SGDClassifier(alpha=.00001, loss='log', penalty="elasticnet", l1_ratio=0.2))
 
-    benchmark(MultinomialNB(alpha=.01))
+    benchmark(MultinomialNB(alpha=.03))
