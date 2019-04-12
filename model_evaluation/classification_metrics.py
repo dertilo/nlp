@@ -40,7 +40,7 @@ def calc_labelwise_scores(proba, pred, target, target_names):
     def calc_pr_auc_interpolated_labelwise(y_target, y_pred_proba, target_names):
         def calc_interpol_pr_auc(target, pred):
             pre, rec, threshs = metrics.precision_recall_curve(target, pred, pos_label=1)
-            pr_auc = metrics.auc(pre, rec, reorder=True)
+            pr_auc = metrics.auc(pre, rec)
             return pr_auc
 
         return [ttc(calc_interpol_pr_auc, y_target[:, target_names.index(target)],
