@@ -60,57 +60,10 @@ class ToBeScoredAbstractClassifier(object):
     def fit(self,train_data):
         raise NotImplementedError()
 
-def try_to_calculate(fun,x,y,default=None):
-    try:
-        return fun(x,y)
-    except:
-        return default
-
-def calc_interpol_pr_auc(target,pred):
-    pre, rec, threshs = metrics.precision_recall_curve(target,pred, pos_label=1)
-    pr_auc = metrics.auc(pre, rec, reorder=True)
-    return pr_auc
 
 
-def calc_pr_auc_interpolated_labelwise(y_target,y_pred_proba,target_names):
-    return [try_to_calculate(calc_interpol_pr_auc,y_target[:, target_names.index(target)], y_pred_proba[:, target_names.index(target)],-1) for target in target_names]
 
 
-def classification_scores(y_pred_proba, y_pred, y_target, target_names,time_it=False):
-    if time_it: start = time()
-    assert isinstance(y_target, np.ndarray) and y_target.dtype == 'int64'
-    assert isinstance(y_pred_proba, np.ndarray) and y_pred_proba.dtype == 'float64'
-    assert isinstance(y_pred, np.ndarray) and y_pred.dtype == 'float64'
-
-    report_txt = metrics.classification_report(y_true=y_target,
-                                               y_pred=y_pred,
-                                               target_names=target_names, digits=3)
-
-    pr_auc_labelwise = try_to_calculate(partial(average_precision_score,average=None),y_target,y_pred_proba,default=[-1 for _ in range(len(target_names))])
-    pr_auc_interpolated_labelwise = calc_pr_auc_interpolated_labelwise(y_target,y_pred_proba,target_names)
-    roc_auc_labelwise = try_to_calculate(partial(metrics.roc_auc_score,average=None),y_target,y_pred_proba,default=[-1 for _ in range(len(target_names))])
-    auc_macro = try_to_calculate(partial(metrics.roc_auc_score,average='macro'),y_target,y_pred_proba)
-    pr_auc_macro = try_to_calculate(partial(average_precision_score,average='macro'),y_target,y_pred_proba)
-    auc_micro = try_to_calculate(partial(metrics.roc_auc_score,average='micro'),y_target,y_pred_proba)
-    pr_auc_micro = try_to_calculate(partial(average_precision_score,average='micro'),y_target,y_pred_proba)
-    # labelwise_pr_curve = {target_names[k]:precision_recall_curve(y_target[:,k],y_pred_proba[:,k]) for k in range(len(target_names))}
-    metrices = {
-        'labelwise': classifaction_report_to_dict(report_txt),
-        'ROC-AUC-macro': auc_macro,
-        'PR-AUC-macro': pr_auc_macro,
-        'ROC-AUC-micro': auc_micro,
-        'PR-AUC-micro': pr_auc_micro,
-        'f1-macro': metrics.f1_score(y_target, y_pred, average='macro'),
-        'f1-micro': metrics.f1_score(y_target, y_pred, average='micro'),
-        # 'accuracy': metrics.accuracy_score(y_target,y_pred) # same as f1-micro for single-label classification
-    }
-    for label, roc_auc,pr_auc,pr_auc_interp in zip(target_names,roc_auc_labelwise,pr_auc_labelwise,pr_auc_interpolated_labelwise):
-        metrices['labelwise'][label]['ROC-AUC']=0.001*round(1000*roc_auc)
-        metrices['labelwise'][label]['PR-AUC']=0.001*round(1000*pr_auc)
-        metrices['labelwise'][label]['PR-AUC-interp']=0.001*round(1000*pr_auc_interp)
-        # metrices['labelwise'][label]['pr_curve']=labelwise_pr_curve[label]
-    if time_it: print('calculating classification scores took: %0.2f seconds'%(time()-start))
-    return metrices
 
 
 def multilabel_scorer(toBeScoredWrapper:ToBeScoredAbstractClassifier, train_data, test_data, target_names,
@@ -234,20 +187,6 @@ def scores_to_csv(scores,dump_file='/tmp/scores.csv'):
     df.to_csv(path_or_buf=dump_file, sep='\t',float_format='%0.2f')
 
 
-def classifaction_report_to_dict(report):
-    report_data = {}
-    lines = report.split('\n')
-    for line in lines[2:-3]:
-        row = {}
-        row_data = line.split(' ')
-        row_data = [r for r in row_data if r is not '']
-        report_data[row_data[0]] = {
-            'precision':float(row_data[1]),
-            'recall':float(row_data[2]),
-            'f1_score':float(row_data[3]),
-            'support':float(row_data[4])
-        }
-    return report_data
 
 
 def shuffleSplit_and_crossevaluate(
