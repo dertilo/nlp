@@ -5,7 +5,7 @@ from sklearn.model_selection import StratifiedShuffleSplit, ShuffleSplit
 
 
 def score_splits(scorer,data,splits):
-    def calc_scores(test_idx, train_idx):
+    def calc_scores(train_idx, test_idx):
         train_data = [data[i] for i in train_idx]
         test_data = [data[i] for i in test_idx]
         scoring = scorer(train_data, test_data)
