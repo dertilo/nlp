@@ -8,7 +8,7 @@ def get_20newsgroups_data(train_test,
                           categories=None,
                           truncate_to:int=None,
                           min_num_tokens=0,
-                          random_state=42)->List[Tuple[str,List[str]]]:
+                          random_state=42)->List[Tuple[str,str]]:
     """
      'alt.atheism',
      'comp.graphics',
