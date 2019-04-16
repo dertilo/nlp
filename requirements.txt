@@ -1,2 +1,3 @@
 sklearn
 util@git+https://git@gitlab.tubit.tu-berlin.de/tilo-himmelsbach/util.git#egg=util
+flair
