@@ -6,14 +6,17 @@
 # project topics: 
 * [EmoContext-Codalab](https://competitions.codalab.org/competitions/19790); [EmoContext](https://www.humanizing-ai.com/emocontext.html)
 * [Hyperpartisan News Detection](https://pan.webis.de/semeval19/semeval19-web/) -> dataset?
+
 ### [hatEval-2019](https://competitions.codalab.org/competitions/19935)
 Multilingual Detection of Hate Speech Against Immigrants and Women in Twitter  
 data contains tweets like: `YOU HAVE GOT TO BE 💩IN’ ME 😳 The German Government Pays for 3 Week Vacation for Refugees to Go Home`   
 here [someones github](https://github.com/rnjtsh/hatEval-2019)
+
 ### [OffensEval 2019](https://competitions.codalab.org/competitions/20011)
 Identifying and Categorizing Offensive Language in Social Media (tweets)
 
 ## advanced stuff
+
 ### Transfer-Learning 
 
 #### NLP using [flair](https://github.com/zalandoresearch/flair.git)
@@ -28,6 +31,7 @@ Identifying and Categorizing Offensive Language in Social Media (tweets)
 * [pytorchic-bert](https://github.com/dhlee347/pytorchic-bert.git)
 
 ### Machine Teaching
+
 #### close/strong supervision
 * can one do __active learning__ with [BRAT](http://brat.nlplab.org/) == [GaoleMeng](https://github.com/GaoleMeng/ActiveLearningAnnotationTool)?
 * what is [tagtog](https://docs.tagtog.net/) ?
