@@ -1,11 +1,18 @@
 # NLP 
-## setup
-1. `git clone git@gitlab.tubit.tu-berlin.de:NLP/nlp.git`
-2. `pip install -r requirements.txt`  
   
 # project topics: 
-* [EmoContext-Codalab](https://competitions.codalab.org/competitions/19790); [EmoContext](https://www.humanizing-ai.com/emocontext.html)
-* [Hyperpartisan News Detection](https://pan.webis.de/semeval19/semeval19-web/) -> dataset?
+* [EmoContext-Codalab](https://competitions.codalab.org/competitions/19790); [EmoContext](https://www.humanizing-ai.com/emocontext.html) -> data?
+
+### [pytorch-seq2seq-chatbot-tutorial](https://pytorch.org/tutorials/beginner/chatbot_tutorial.html)
+* actually this is just a "simple" seq2seq- or encoder-decoder- setting with some fancy attention mechanism in the decoder
+* the decoder seems to be attending over encoded tokens from the previous utterance/dialog-turn only? -> might be cooler to take some dialog-history as input for the decoder (sequence-generator)
+
+### [DSTC7](http://workshop.colips.org/dstc7/call.html)
+* [End-to-End Conversation Modeling](https://github.com/mgalley/DSTC7-End-to-End-Conversation-Modeling): seq2seq-setting
+* [Sentence Selection](https://github.com/IBM/dstc7-noesis): sentence-classification/ranking/selection
+
+### [Hyperpartisan News Detection](https://pan.webis.de/semeval19/semeval19-web/) 
+[dataset](https://zenodo.org/record/1489920) -> they send some link to the data after one requested access
 
 ### [hatEval-2019](https://competitions.codalab.org/competitions/19935)
 Multilingual Detection of Hate Speech Against Immigrants and Women in Twitter  
