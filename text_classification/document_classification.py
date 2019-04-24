@@ -67,20 +67,21 @@ def text_to_bow(text):
     return regex_tokenizer(text)
 
 if __name__ == '__main__':
-    # data_train = get_20newsgroups_data('train')
-    # data_test = get_20newsgroups_data('test')
+    data_train = get_20newsgroups_data('train')
+    data_test = get_20newsgroups_data('test')
 
-    def convert_GermEval2017_data(d):
-        return d['text'],d['sentiment']
-
-    data_train = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/train_v1.4.tsv')]
-    data_test = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/test_TIMESTAMP1.tsv')]
+    # def convert_GermEval2017_data(d):
+    #     return d['text'],d['sentiment']
+    #
+    # data_train = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/train_v1.4.tsv')]
+    # data_test = [convert_GermEval2017_data(d) for d in get_GermEval2017_TaskB_data('../data/test_TIMESTAMP1.tsv')]
 
     vectorizer = TfidfVectorizer(sublinear_tf=True,
                                  preprocessor=identity_dummy_method,
                                  tokenizer=identity_dummy_method,
                                  ngram_range=(1, 1),
-                                 max_df=0.75, min_df=2,
+                                 max_df=0.75,
+                                 min_df=2,
                                  max_features=30000,
                                  stop_words=None#'english'
                                  )
