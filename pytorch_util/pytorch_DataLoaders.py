@@ -1,98 +1,20 @@
-
-from collections import Counter, Iterable
-from typing import List, Callable, Dict, Tuple, Any
+from collections import Counter
+from typing import List, Callable, Any
 
 import numpy as np
-import sys
 import torch
-from commons.util_methods import iterable_to_batches
-from torch.autograd import Variable
+from torch.utils.data import Dataset
 from torch.utils.data.sampler import SequentialSampler, BatchSampler, WeightedRandomSampler, Sampler
 
 
 class PyTorchFromListDataset(torch.utils.data.Dataset):
-    def __init__(self, data_target_tuples:List,
-                 ):
+    def __init__(self, data_target_tuples:List):
         self.data_target_tuples = data_target_tuples
 
     def __getitem__(self, index=None):
         return self.data_target_tuples[index]
     def __len__(self):
         return len(self.data_target_tuples)
-
-
-def build_batching_DataLoader_from_iterator_supplier(
-        data_supplier: Callable[[], Iterable],
-        process_batch_fun:Callable[[List],Any],
-        collate_fn,
-        num_workers=0, batch_size=32):
-    dataset = PyTorchBatchingDatasetFromIteratorSupplier(data_supplier, batch_size=batch_size,
-                                                         process_batch_fun=process_batch_fun,
-                                                         num_batches_per_epoch=sys.maxsize #TODO: this is somewhat fuckedup!
-                                                         )
-
-    # def init_fn(worker_id):
-    #     torch.manual_seed(12345)
-
-    data_loader = torch.utils.data.DataLoader(dataset,
-                                              pin_memory=False,
-                                              # worker_init_fn=init_fn,
-                                              num_workers=num_workers,
-                                              batch_size=1,
-                                              shuffle=False,
-                                              collate_fn=collate_fn,
-                                              sampler=SequentialSampler(dataset)) #needs to be SequentialSampler with batch_size 1 !!!
-    return data_loader
-
-
-def build_DataLoader(dataset: torch.utils.data.Dataset,collate_fn=lambda x:x[0], num_workers=0,pin_memory=False):
-    data_loader = torch.utils.data.DataLoader(dataset,
-                                              num_workers=num_workers,
-                                              batch_size=1,
-                                              shuffle=False,
-                                              collate_fn=collate_fn,
-                                              pin_memory=pin_memory,
-                                              sampler=SequentialSampler(dataset))
-    return data_loader
-
-class MessagingSampler(Sampler):
-
-    def __init__(self, message_supplier, num_batches_per_epoch):
-        super().__init__(None)
-        self.message_supplier = message_supplier
-        self.num_batches_per_epoch = num_batches_per_epoch
-
-    def __iter__(self):
-        for k in range(self.num_batches_per_epoch):
-            yield [self.message_supplier()]
-        yield []
-        while True:
-            yield [self.message_supplier()]
-
-    def __len__(self):
-        return self.num_batches_per_epoch
-
-def collate_fn(x):
-    if len(x)==1:
-        return x[0]
-    else:
-        raise StopIteration
-
-def build_messaging_DataLoader(dataset: torch.utils.data.Dataset,
-                               message_supplier:Callable[[], Any],
-                               collate_fn=collate_fn,
-                               num_workers=0,
-                               pin_memory=False):
-    data_loader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=num_workers,
-        shuffle=False,
-        collate_fn=collate_fn,
-        pin_memory=pin_memory,
-        batch_sampler=MessagingSampler(message_supplier=message_supplier,
-                                       num_batches_per_epoch=len(dataset)))
-    return data_loader
-
 
 def calc_balancing_weights_num_samples(data_targets):
     label_counter = Counter((label for d in data_targets for label in d['target']))
@@ -134,43 +56,40 @@ def build_sampling_DataLoader(data_targets: List,
     )
     return data_loader
 
-class BatchSupplingDataset(torch.utils.data.Dataset):
-    def __init__(self,
-                 batch_supplier:Callable,
-                 num_batches_per_epoch,
-                 ):
-        self.batch_supplier=batch_supplier
-        self.num_batches_per_epoch = num_batches_per_epoch
 
-    def __getitem__(self, index=None):
-        return self.batch_supplier()
+class MessagingSampler(Sampler):
 
-    def __len__(self):
-        return self.num_batches_per_epoch
+    def __init__(self, message_supplier):
+        super().__init__(None)
+        self.message_supplier = message_supplier
 
-class PyTorchBatchingDatasetFromIteratorSupplier(torch.utils.data.Dataset):
-    def __init__(self,
-                 data_supplier:Callable[[], Iterable],
-                 num_batches_per_epoch,
-                 batch_size,
-                 process_batch_fun:Callable[[List],Any],
-                 ):
-        self.data_supplier = data_supplier
-        self.batch_size = batch_size
-        self.num_batches_per_epoch = num_batches_per_epoch
-        self.process_batch_fun = process_batch_fun
-        self.raw_batch_iterator = iterable_to_batches(self.data_supplier(), self.batch_size)
-
-    def reset_raw_batch_iterator(self):
-        self.raw_batch_iterator = iterable_to_batches(self.data_supplier(), self.batch_size)
-
-    def __getitem__(self, index=None):
-        if index == 0:
-            self.reset_raw_batch_iterator()
-        return self.process_batch_fun(next(self.raw_batch_iterator))
+    def __iter__(self):
+        while True:
+            yield [self.message_supplier()]
 
     def __len__(self):
-        return self.num_batches_per_epoch
+        assert False
+
+def build_messaging_DataLoader_from_dataset(
+        dataset:Dataset,
+        collate_fn,
+        num_workers=0,# to be used with caution!
+        message_supplier: Callable[[], Any]=lambda:None,
+
+):
+    if num_workers>0:
+        raise Warning('caution! this is pickling the dataset-object!')
+
+    data_loader = torch.utils.data.DataLoader(
+        dataset,
+        pin_memory=False,#???
+        num_workers=num_workers,
+        batch_size=1,
+        shuffle=False,
+        collate_fn=collate_fn,
+        batch_sampler=MessagingSampler(message_supplier=message_supplier)
+    )
+    return data_loader
 
 if __name__ == '__main__':
     dummpy_data = [{'data': np.zeros((1,9)),'target': [k]} for ks in [[0]*75,[1]*20,[2]*5]for k in ks]

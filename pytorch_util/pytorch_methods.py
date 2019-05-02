@@ -15,10 +15,15 @@ import torch
 from torch.utils.data.dataloader import _DataLoaderIter
 
 USE_CUDA = torch.cuda.is_available()
-if USE_CUDA:
-    print('using: ' + torch.cuda.get_device_name(0))
-else:
-    print('no GPU found!')
+
+def get_device():
+    "get device (CPU or GPU)"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    n_gpu = torch.cuda.device_count()
+    print("%s (%d GPUs)" % (device, n_gpu))
+    return device
+
+DEVICE = get_device()
 
 import numpy as np
 
@@ -42,7 +47,7 @@ def iterate_and_time(g):
 
 def train(
         train_on_batch_fun,
-        batch_generator_supplier:Callable[[],Any],
+        dataloader:DataLoader,
         num_epochs = 10,
         patience = 2,
         tol = 0.01,
@@ -51,9 +56,8 @@ def train(
     losses = []; all_batch_losses = []
     start = time.time()
     for t in range(num_epochs):
-        iterator = batch_generator_supplier()
         batch_start = time.time()
-        batch_losses_durations = [(train_on_batch_fun(batch), dur) for batch, dur in iterate_and_time(iterator)]
+        batch_losses_durations = [(train_on_batch_fun(batch), dur) for batch, dur in iterate_and_time(iter(dataloader))]
         batch_losses = [bl for bl,_ in batch_losses_durations]
         all_batch_losses.append(batch_losses)
         wait_time = np.sum([d for _, d in batch_losses_durations])
@@ -73,21 +77,22 @@ def train(
     return losses,all_batch_losses
 
 
-def to_torch_to_cuda(x):
+def to_torch_to_cuda(x,device=None):
     if isinstance(x,dict):
-        return {name: to_cuda(torch.from_numpy(b)) if isinstance(b,numpy.ndarray) else to_cuda(b)
+        return {name: to_cuda(torch.from_numpy(b),device) if isinstance(b,numpy.ndarray) else to_cuda(b)
                 for name, b in x.items() }
     else:
-        return to_cuda(torch.from_numpy(x))
+        return to_cuda(torch.from_numpy(x),device)
 
-def to_cuda(x):
+def to_cuda(x,device=None):
+    if device is None: device = DEVICE
     if isinstance(x,dict):
         if USE_CUDA:
-            return {n:x.cuda() for n,x in x.items() if isinstance(x,torch.Tensor) or isinstance(x,Variable)}
+            return {n:x.to(device) for n,x in x.items() if isinstance(x,torch.Tensor) or isinstance(x,Variable)}
         else:
             return x
     else:
-        return x.cuda() if USE_CUDA else x
+        return x.to(device) if USE_CUDA else x
 
 def predict_with_softmax(pytorch_nn_model:nn.Module, batch_iterable:Iterable[Dict[str,Variable]]):
     pytorch_nn_model.eval()
@@ -121,5 +126,4 @@ def print_module(model:torch.nn.Module):
         trainable = 'trainable' if param.requires_grad else ''
         print(name + ': ' + str(param.data.shape) + ' ' + is_cuda + ' ' + trainable)
     print('* number of parameters: %d' % sum([p.nelement() for p in model.parameters()]))
-
 
