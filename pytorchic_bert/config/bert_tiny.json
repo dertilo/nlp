@@ -1,0 +1,12 @@
+{
+	"dim": 3,
+	"dim_ff": 32,
+	"n_layers": 1,
+	"p_drop_attn": 0.0,
+	"n_heads": 8,
+	"p_drop_hidden": 0.0,
+	"max_len": 42,
+	"n_segments": 2,
+	"vocab_size": 30522
+}
+
