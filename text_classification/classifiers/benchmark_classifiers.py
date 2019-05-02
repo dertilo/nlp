@@ -12,7 +12,7 @@ from model_evaluation.crossvalidation import calc_mean_std_scores
 from text_classification.classifiers.common import GenericClassifier
 from text_classification.classifiers.embedding_bag_pytorch import EmbeddingBagClassifier
 from text_classification.classifiers.tfidf_elasticnet_pytorch import TfIdfElasticNetPytorchClf
-from text_classification.classifiers.tfidf_sgd_sklearn import raw_bow, TfIdfSGDGenericClassifier
+from text_classification.classifiers.tfidf_sgd_sklearn import raw_bow, TfIdfSGDSklearnClf
 from text_classification.data_readers import get_20newsgroups_data
 
 
@@ -37,7 +37,7 @@ def benchmark(build_pipeline_fun,parameters:Dict,data):
         }
 
 
-    splitter = ShuffleSplit(n_splits=1, test_size=0.9, random_state=111)
+    splitter = ShuffleSplit(n_splits=1, test_size=0.3, random_state=111)
     splits = [(train, test) for train, test in
               splitter.split(X=range(len(data)))]
 
@@ -52,6 +52,6 @@ if __name__ == '__main__':
     label_counter = Counter([d['labels'][0] for d in data])
     pprint(label_counter)
 
-    benchmark(TfIdfSGDGenericClassifier, parameters={'preprocess_fun':raw_bow, 'alpha':0.00002}, data=data)
-    benchmark(TfIdfElasticNetPytorchClf,parameters={'preprocess_fun':raw_bow,'alpha':0.00002},data=data)
-    benchmark(EmbeddingBagClassifier,parameters={'embedding_dim':9,'alpha':0.0},data=data)
+    benchmark(TfIdfSGDSklearnClf, parameters={'text_to_bow_fun':raw_bow, 'alpha':0.00002}, data=data)
+    benchmark(TfIdfElasticNetPytorchClf,parameters={'text_to_bow_fun':raw_bow,'alpha':0.00002},data=data)
+    # benchmark(EmbeddingBagClassifier,parameters={'embedding_dim':9,'alpha':0.0},data=data)

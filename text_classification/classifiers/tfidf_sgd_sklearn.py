@@ -45,10 +45,10 @@ def raw_bow(texts):
     raw_bows = [text_to_bow(text) for text in texts]
     return raw_bows
 
-class TfIdfSGDGenericClassifier(GenericClassifier):
-    def __init__(self,preprocess_fun,alpha = 0.00001) -> None:
+class TfIdfSGDSklearnClf(GenericClassifier):
+    def __init__(self, text_to_bow_fun, alpha = 0.00001) -> None:
         super().__init__()
-        self.preprocess_fun = preprocess_fun
+        self.text_to_bow_fun = text_to_bow_fun
         vectorizer = TfidfVectorizer(sublinear_tf=True,
                                      preprocessor=identity_dummy_method,
                                      tokenizer=identity_dummy_method,
@@ -64,12 +64,12 @@ class TfIdfSGDGenericClassifier(GenericClassifier):
         self.target_binarizer = MultiLabelBinarizer()
         self.target_binarizer.fit([d['labels'] for d in X])
         y_train_bin = self.target_binarizer.transform([d['labels'] for d in X])
-        self.pipeline.fit(self.preprocess_fun([d['text'] for d in X]), np.argmax(y_train_bin, axis=1))
+        self.pipeline.fit(self.text_to_bow_fun([d['text'] for d in X]), np.argmax(y_train_bin, axis=1))
         assert len(self.target_binarizer.classes_) > 1
         return self
 
     def predict_proba(self,X):
-        return self.pipeline.predict_proba(self.preprocess_fun([d['text'] for d in X]))
+        return self.pipeline.predict_proba(self.text_to_bow_fun([d['text'] for d in X]))
 
     def predict_proba_encode_targets(self, data):
         probas = self.predict_proba(data)
