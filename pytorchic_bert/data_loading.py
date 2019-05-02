@@ -6,8 +6,8 @@ from typing import List
 import torch
 from torch.utils.data import Dataset
 
-import tokenization
-from preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
+from pytorchic_bert import tokenization
+from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
 
 
 class CsvDataset(Dataset):

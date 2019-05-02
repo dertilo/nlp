@@ -12,7 +12,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 
-import checkpoint
+from pytorchic_bert import checkpoint
 
 
 class Config(NamedTuple):

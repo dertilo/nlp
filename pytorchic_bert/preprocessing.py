@@ -1,6 +1,6 @@
 from typing import List
 
-from utils import truncate_tokens_pair
+from pytorchic_bert.utils import truncate_tokens_pair
 
 
 class CallableInterface():

@@ -14,6 +14,7 @@ from pytorchic_bert import tokenization
 from pytorchic_bert import training
 from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
 from pytorchic_bert.utils import get_device, set_seeds
+from text_classification.classifiers.common import GenericClassifier
 
 
 class AttentionClassifier(nn.Module):
@@ -34,18 +35,18 @@ class AttentionClassifier(nn.Module):
         return logits
 
 
-class BaselineClf(nn.Module):
-    def __init__(self, cfg, n_labels):
-        super().__init__()
-        self.tok_embed = nn.Embedding(cfg.vocab_size, cfg.dim) # token embedding
-        self.classifier = nn.Linear(cfg.dim, n_labels)
+# class BaselineClf(nn.Module):
+#     def __init__(self, cfg, n_labels):
+#         super().__init__()
+#         self.tok_embed = nn.Embedding(cfg.vocab_size, cfg.dim) # token embedding
+#         self.classifier = nn.Linear(cfg.dim, n_labels)
+#
+#     def forward(self, x, seg, mask):
+#         embedded = self.tok_embed(x)
+#         return self.classifier(torch.sum(embedded, dim=1))
 
-    def forward(self, x, seg, mask):
-        embedded = self.tok_embed(x)
-        return self.classifier(torch.sum(embedded, dim=1))
 
-
-class AttentionClassifierPipeline(BaseEstimator):
+class AttentionClassifierPipeline(GenericClassifier):
     def __init__(self,cfg,
                  model_cfg,
                  vocab_file,
@@ -86,10 +87,9 @@ class AttentionClassifierPipeline(BaseEstimator):
     def _build_trainer(self, X, save_dir):
         dataset = data_loading.TextLabelTupleDataset(raw_data=X, pipeline=self.pipeline)
         data_iter = DataLoader(dataset, batch_size=self.cfg.batch_size, shuffle=True)
-        # model = AttentionClassifier(self.model_cfg, self.num_labels)
-        model = BaselineClf(self.model_cfg, self.num_labels)
+        model = AttentionClassifier(self.model_cfg, self.num_labels)
         print(model)
-        # optimizer = optim.optim4GPU(self.cfg, model)
+        # optimizer = optim.optim4GPU(self.cfg, model) #TODO(tilo):holyJohn!
         optimizer = torch.optim.RMSprop([p for p in model.parameters() if p.requires_grad], lr=0.01)
 
 
@@ -130,6 +130,10 @@ class AttentionClassifierPipeline(BaseEstimator):
         results= torch.cat(batch_results)
         return results.cpu().numpy().astype('float64')
 
+    def predict_proba_encode_targets(self, data):
+        pass
+
+
 if __name__ == '__main__':
 
     from pathlib import Path
@@ -142,7 +146,7 @@ if __name__ == '__main__':
 
     model_cfg = 'config/bert_tiny.json'
     cfg = training.Config(lr=1e-4,n_epochs=2,batch_size=32)
-    import selfattention_encoder as selfatt_enc
+    import pytorchic_bert.selfattention_encoder as selfatt_enc
     model_cfg = selfatt_enc.Config.from_json(model_cfg)
     max_len = model_cfg.max_len
 

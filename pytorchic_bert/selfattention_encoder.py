@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import split_last, merge_last
+from pytorchic_bert.utils import split_last, merge_last
 
 
 class Config(NamedTuple):
@@ -140,7 +140,7 @@ class EncoderLayer(nn.Module):
 
 
 class EncoderStack(nn.Module):
-    """ Transformer with Self-Attentive Blocks"""
+    
     def __init__(self, cfg):
         super().__init__()
         self.embed = Embeddings(cfg)

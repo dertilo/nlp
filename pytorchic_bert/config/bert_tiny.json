@@ -1,5 +1,5 @@
 {
-	"dim": 3,
+	"dim": 32,
 	"dim_ff": 32,
 	"n_layers": 1,
 	"p_drop_attn": 0.0,
