@@ -225,7 +225,7 @@ class WordpieceTokenizer(object):
                 while start < end:
                     substr = "".join(chars[start:end])
                     if start > 0:
-                        substr = "##" + substr
+                        substr = "##" + substr # yes the BERT-vocabulary seems to contains lots of such "##"-prefixed tokens!
                     if substr in self.vocab:
                         cur_substr = substr
                         break
@@ -281,3 +281,11 @@ def _is_punctuation(char):
     if cat.startswith("P"):
         return True
     return False
+
+if __name__ == '__main__':
+    from pathlib import Path
+    home = str(Path.home())
+    vocab = home+'/data/models/uncased_L-12_H-768_A-12/vocab.txt'
+
+    tokenizer = WordpieceTokenizer(load_vocab(vocab))
+    print(tokenizer.tokenize('unaffable shitwork'))

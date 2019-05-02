@@ -17,12 +17,6 @@ def set_seeds(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def get_device():
-    "get device (CPU or GPU)"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    n_gpu = torch.cuda.device_count()
-    print("%s (%d GPUs)" % (device, n_gpu))
-    return device
 
 def split_last(x, shape):
     "split the last dimension to given shape"
