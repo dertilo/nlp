@@ -1,25 +1,28 @@
 import json
 import os
+import time
 from collections import Counter
 from pprint import pprint
 from typing import NamedTuple
 
 import torch
 from commons.util_methods import iterable_to_batches
+from sklearn.preprocessing import MultiLabelBinarizer
 from torch import nn as nn
 from torch.utils.data import Dataset
 
 from getting_data.clef2019 import get_Clef2019_data
 from pytorch_util.multiprocessing_proved_dataloading import build_messaging_DataLoader_from_dataset_builder
-from pytorch_util.pytorch_methods import get_device
+from pytorch_util.pytorch_methods import get_device, iterate_and_time
 from pytorchic_bert import checkpoint
 from pytorchic_bert import tokenization
 from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
 from pytorchic_bert.utils import set_seeds
 from text_classification.classifiers.common import GenericClassifier
+import pytorchic_bert.selfattention_encoder as selfatt_enc
 
 
-class Config(NamedTuple):
+class AttentionClassifierConfig(NamedTuple):
     """ Hyperparameters for training """
     seed: int = 3431 # random seed
     batch_size: int = 32
@@ -64,14 +67,39 @@ class AttentionClassifier(nn.Module):
 #         embedded = self.tok_embed(x)
 #         return self.classifier(torch.sum(embedded, dim=1))
 
-class PipelineProcessingDataset(Dataset):
+class AttentionDataset(Dataset):
 
     def __init__(self,
                  raw_data,
+                 dataprocessor,
+                 batch_size
+                 ):
+
+        self.dataprocessor = dataprocessor
+        self.batch_size = batch_size
+        data = self.dataprocessor.transform(raw_data)
+        self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
+        self.batch_indizes_g = iterable_to_batches(iter(range(self.tensors[0].shape[0])), batch_size)
+
+    def __getitem__(self, index):
+        message = index
+        try:
+            batch = next(self.batch_indizes_g)
+        except StopIteration:
+            self.batch_indizes_g = iterable_to_batches(iter(range(self.tensors[0].shape[0])), self.batch_size)
+            raise StopIteration
+
+        return tuple(tensor[batch] for tensor in self.tensors)
+
+class DataProcessor(object):
+
+    def __init__(self,
                  vocab_file,
                  class_labels,
                  max_len,
-                 batch_size):
+                 ):
+        super().__init__()
+        self.target_binarizer = MultiLabelBinarizer()
 
         tokenizer = tokenization.FullTokenizer(vocab_file=vocab_file, do_lower_case=True)
         self.pipeline = Pipeline([SentencePairTokenizer(tokenizer.convert_to_unicode, tokenizer.tokenize),
@@ -79,19 +107,17 @@ class PipelineProcessingDataset(Dataset):
                              TokenIndexing(tokenizer.convert_tokens_to_ids, class_labels, max_len)
                              ]
                             )
-        data = [self.pipeline.transform((d['label'],d['text'],'')) for d in raw_data]
-        self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
-        self.batch_indizes_g = iterable_to_batches(iter(range(self.tensors[0].shape[0])), batch_size)
+    def fit(self, data):
+        self.target_binarizer.fit([d['labels'] for d in data])
 
-    def __getitem__(self, index):
-        batch = next(self.batch_indizes_g)
-        return tuple(tensor[batch] for tensor in self.tensors)
+    def transform(self,data):
+        return [self.pipeline.transform((d['labels'][0],d['text'],'')) for d in data]
 
-    def __len__(self):
-        assert False
 
-class AttentionClassifierPipeline(GenericClassifier):
-    def __init__(self,cfg,
+
+class AttentionClassifierPytorch(GenericClassifier):
+    def __init__(self,
+                 cfg,
                  model_cfg,
                  vocab_file,
                  max_len,
@@ -112,25 +138,20 @@ class AttentionClassifierPipeline(GenericClassifier):
             data_parallel = True
             ):
         self.save_dir = save_dir
-        data_iter = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda i:PipelineProcessingDataset(X,self.vocab_file,self.class_labels,self.max_len,batch_size=32),
+        self.dataprocessor = DataProcessor(vocab_file=self.vocab_file,class_labels=self.class_labels,max_len=self.max_len)
+        self.dataprocessor.fit(X)
+
+        dataloader = build_messaging_DataLoader_from_dataset_builder(
+            dataset_builder=lambda i:AttentionDataset(X,self.dataprocessor,batch_size=32),
             message_supplier=lambda :None,
             collate_fn=lambda x:x[0],
-            num_workers=1
+            num_workers=0
         )
         self.model = AttentionClassifier(self.model_cfg, self.num_labels)
         print(self.model)
         # optimizer = optim.optim4GPU(self.cfg, model) #TODO(tilo):holyJohn!
         self.optimizer = torch.optim.RMSprop([p for p in self.model.parameters() if p.requires_grad], lr=0.01)
-
-        criterion = nn.CrossEntropyLoss()
-        def get_loss(model, batch, global_step): # make sure loss is a scalar tensor
-            input_ids, segment_ids, input_mask, label_id = batch
-            logits = model(input_ids, segment_ids, input_mask)
-            loss = criterion(logits, label_id)
-            return loss
-
-        self.train(data_iter,get_loss, model_file, pretrain_file, data_parallel)
+        self.train(dataloader,model_file, pretrain_file, data_parallel)
         return self
 
     def predict_proba(self,X):
@@ -141,10 +162,10 @@ class AttentionClassifierPipeline(GenericClassifier):
             return logits
 
         data_iter = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda i:PipelineProcessingDataset(X,self.vocab_file,self.class_labels,self.max_len,batch_size=32),
+            dataset_builder=lambda i:AttentionDataset(X,self.dataprocessor,batch_size=128),
             message_supplier=lambda :None,
             collate_fn=lambda x:x[0],
-            num_workers=1
+            num_workers=0
         )
 
         batch_results = self.eval(data_iter,pred_batch_fun,model_file=None)
@@ -152,10 +173,12 @@ class AttentionClassifierPipeline(GenericClassifier):
         return results.cpu().numpy().astype('float64')
 
     def predict_proba_encode_targets(self, data):
-        pass
+        probas = self.predict_proba(data)
+        targets = self.target_binarizer.transform([d['labels'] for d in data]).astype('int64')
+        return probas, targets
 
 
-    def train(self,data_iter, get_loss, model_file=None, pretrain_file=None, data_parallel=True):
+    def train(self, dataloader, model_file=None, pretrain_file=None, data_parallel=True):
         self.device = get_device()
         self.model.train()
         self.load(model_file, pretrain_file)
@@ -163,34 +186,37 @@ class AttentionClassifierPipeline(GenericClassifier):
         if data_parallel:
             model = nn.DataParallel(model)
 
+        criterion = nn.CrossEntropyLoss()
+
         global_step = 0 # global iteration steps regardless of epochs
+
+        def train_on_batch(batch):
+            batch = [t.to(self.device) for t in batch]
+            self.optimizer.zero_grad()
+
+            input_ids, segment_ids, input_mask, label_id = batch
+            logits = model(input_ids, segment_ids, input_mask)
+            loss = criterion(logits, label_id).mean()  # mean() for Data Parallelism
+            loss.backward()
+            self.optimizer.step()
+            return loss.item()
+
         for e in range(self.cfg.n_epochs):
             loss_sum = 0. # the sum of iteration losses to get average loss in every epoch
-            # iter_bar = tqdm(self.data_iter, desc='Iter (loss=X.XXX)')
-            iter_bar = data_iter
-            for i, batch in enumerate(iter_bar):
-                batch = [t.to(self.device) for t in batch]
+            duration_sum = 0
 
-                self.optimizer.zero_grad()
-                loss = get_loss(model, batch, global_step).mean() # mean() for Data Parallelism
-                loss.backward()
-                self.optimizer.step()
+            start = time.time()
+            iter_bar = iter(dataloader)
+            for i, (batch,dur) in enumerate(iterate_and_time(iter_bar)):
+                loss = train_on_batch(batch)
 
                 global_step += 1
-                loss_sum += loss.item()
-                # iter_bar.set_description('Iter (loss=%5.3f)'%loss.item())
+                loss_sum += loss
+                duration_sum+=dur
 
-                if global_step % self.cfg.save_steps == 0: # save
-                    self.save(global_step)
+            print('Epoch %d/%d : Average Loss %5.3f;epoch-dur: %0.1f secs; dataloader-dur: %0.1f secs'%(e+1, self.cfg.n_epochs, loss_sum/(i+1),time.time()-start,duration_sum))
+        # self.save(global_step)
 
-                if self.cfg.total_steps and self.cfg.total_steps < global_step:
-                    print('Epoch %d/%d : Average Loss %5.3f'%(e+1, self.cfg.n_epochs, loss_sum/(i+1)))
-                    print('The Total Steps have been reached.')
-                    self.save(global_step) # save and finish when global_steps reach total_steps
-                    return
-
-            print('Epoch %d/%d : Average Loss %5.3f'%(e+1, self.cfg.n_epochs, loss_sum/(i+1)))
-        self.save(global_step)
 
     def eval(self, data_iter, evaluate, model_file, data_parallel=True):
 
@@ -211,6 +237,11 @@ class AttentionClassifierPipeline(GenericClassifier):
 
         return results
 
+    @property
+    def target_binarizer(self):
+        return self.dataprocessor.target_binarizer
+
+
     def load(self, model_file, pretrain_file):
         if model_file:
             print('Loading the model from', model_file)
@@ -229,6 +260,7 @@ class AttentionClassifierPipeline(GenericClassifier):
 
 
     def save(self, i):
+        assert False
         torch.save(self.model.state_dict(), # save model object before nn.DataParallel
             os.path.join(self.save_dir, 'model_steps_'+str(i)+'.pt'))
 
@@ -243,15 +275,15 @@ if __name__ == '__main__':
     pprint(label_counter)
 
     model_cfg = 'config/bert_tiny.json'
-    cfg = Config(lr=1e-4,n_epochs=1,batch_size=128)
-    import pytorchic_bert.selfattention_encoder as selfatt_enc
-    model_cfg = selfatt_enc.Config.from_json(model_cfg)
+    cfg = AttentionClassifierConfig(lr=1e-4, n_epochs=1, batch_size=128)
+
+    model_cfg = selfatt_enc.BertConfig.from_json(model_cfg)
     max_len = model_cfg.max_len
 
     set_seeds(cfg.seed)
 
     vocab = cwd+'/data/models/uncased_L-12_H-768_A-12/vocab.txt'
 
-    pipeline = AttentionClassifierPipeline(cfg,model_cfg,vocab,max_len,list(label_counter.keys()))
+    pipeline = AttentionClassifierPytorch(cfg, model_cfg, vocab, max_len, list(label_counter.keys()))
     pipeline.fit(data)
     proba = pipeline.predict_proba(data)
