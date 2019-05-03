@@ -1,5 +1,6 @@
 import sys
 
+from text_classification.classifiers.embedding_bag_pytorch import EmbeddingBagClassifier
 from text_classification.classifiers.tfidf_dataprocessor import raw_bow
 from text_classification.classifiers.tfidf_elasticnet_pytorch import TfIdfElasticNetPytorchClf
 
@@ -54,6 +55,6 @@ if __name__ == '__main__':
     label_counter = Counter([d['labels'][0] for d in data])
     pprint(label_counter)
 
-    benchmark(TfIdfSGDSklearnClf, parameters={'text_to_bow_fun':raw_bow, 'alpha':0.00002}, data=data)
-    benchmark(TfIdfElasticNetPytorchClf,parameters={'text_to_bow_fun':raw_bow,'alpha':0.00002},data=data)
-    # benchmark(EmbeddingBagClassifier,parameters={'embedding_dim':9,'alpha':0.0},data=data)
+    # benchmark(TfIdfSGDSklearnClf, parameters={'text_to_bow_fun':raw_bow, 'alpha':0.00002}, data=data)
+    # benchmark(TfIdfElasticNetPytorchClf,parameters={'text_to_bow_fun':raw_bow,'alpha':0.00002},data=data)
+    benchmark(EmbeddingBagClassifier,parameters={'embedding_dim':9,'alpha':0.0},data=data)
