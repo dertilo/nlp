@@ -33,16 +33,30 @@ def build_messaging_DataLoader_from_dataset_builder(
         collate_fn,
         num_workers=0,
 ):
-    data_loader = torch.utils.data.DataLoader(
-        DatasetWrapper(),
-        pin_memory=False,#???
-        worker_init_fn=partial(dataset_initializer, dataset_builder=dataset_builder),
-        num_workers=num_workers,
-        batch_size=1,
-        shuffle=False,
-        collate_fn=collate_fn,
-        batch_sampler=MessagingSampler(message_supplier=message_supplier)
-    )
+    sampler = MessagingSampler(message_supplier=message_supplier)
+    if num_workers>0:
+        data_loader = torch.utils.data.DataLoader(
+            DatasetWrapper(),
+            pin_memory=False,#???
+            worker_init_fn=partial(dataset_initializer, dataset_builder=dataset_builder),
+            num_workers=num_workers,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=collate_fn,
+            batch_sampler=sampler
+        )
+    else: # Dataset in same process
+        dataset_initializer(0,dataset_builder)
+        data_loader = torch.utils.data.DataLoader(
+            DatasetWrapper(),
+            pin_memory=False,  # ???
+            num_workers=0,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=collate_fn,
+            batch_sampler=sampler
+        )
+
     return data_loader
 
 
