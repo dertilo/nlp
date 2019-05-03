@@ -27,23 +27,14 @@ DEVICE = get_device()
 
 import numpy as np
 
-
-# def train_on_batch(batch):
-#     loss = self.model.loss(**batch)
-#     optimizer.zero_grad()
-#     loss.backward()
-#     optimizer.step()
-#     return loss.data
-
 def iterate_and_time(g):
-    d = next(g)
     while True:
         start = time.time()
-        yield d, time.time() - start
         try:
             d = next(g)
         except StopIteration:
             break
+        yield d, time.time() - start
 
 def train(
         train_on_batch_fun,
