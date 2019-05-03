@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,15 +6,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
 
 from torch.autograd import Variable
-from torch.utils.data import Dataset
 
 from pytorch_util import pytorch_methods, pytorch_DataLoaders
+from pytorch_util.pytorch_DataLoaders import DatasetWrapper
 from pytorch_util.pytorch_methods import to_torch_to_cuda
 from text_classification.classifiers.common import GenericClassifier
 
 import numpy as np
 
-from text_classification.classifiers.tfidf_sgd_sklearn import identity_dummy_method
+from text_classification.classifiers.tfidf_dataprocessor import TfIdfTextClfDataProcessor
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -48,56 +46,6 @@ class LinearClfL1L2Regularized(nn.Module):
     def forward(self, input:Variable):
         return self.linear_layer(input)
 
-
-class BatchingDataset(Dataset):
-
-    def __init__(self,
-                 data_supplier,
-                 text_to_bow_fun,
-                 vectorizer,
-                 target_binarizer,
-                 batch_size=32) -> None:
-        super().__init__()
-        self.batch_size = batch_size
-        self.data_supplier = data_supplier
-        self.text_to_bow_fun=text_to_bow_fun
-        self.target_binarizer = target_binarizer
-        self.vectorizer = vectorizer
-        self.batch_g = iterable_to_batches(data_supplier(), batch_size)
-
-    def __getitem__(self, index):
-        message = index
-        if message == 'train':
-            is_train = True
-        elif message == 'eval':
-            is_train = False
-        else:
-            assert False
-        try:
-            batch = next(self.batch_g)
-        except StopIteration:
-            self.batch_g = iterable_to_batches(self.data_supplier(), self.batch_size)
-            raise StopIteration
-
-        return self._process_batch_fun(batch, is_train=is_train)
-
-    def process_inputs(self,batch_data):
-        bow = self.text_to_bow_fun(batch_data)
-        csr = self.vectorizer.transform(bow)
-        # assert all([isinstance(x,csr_matrix) for x in batch_data])
-        # csr = vstack(batch_data, format='csr')
-        return csr.toarray().astype('float32')
-
-    def _process_batch_fun(self,batch,is_train):
-        procesed_batch = {'input': self.process_inputs([d['text'] for d in batch])}
-        if is_train:
-            procesed_batch['target'] = self.target_binarizer.transform([d['labels'] for d in batch]).astype('float32')
-        return procesed_batch
-
-    def __len__(self):
-        assert False
-
-
 class TfIdfElasticNetPytorchClf(GenericClassifier):
     def __init__(self,
                  text_to_bow_fun,
@@ -107,24 +55,11 @@ class TfIdfElasticNetPytorchClf(GenericClassifier):
 
         self.alpha = alpha
         self.l1_ratio = l1_ratio
-        self.target_binarizer = None
+        self.dataprocessor = TfIdfTextClfDataProcessor(text_to_bow_fun)
 
     def fit(self, data, y=None):
-        self.vectorizer = TfidfVectorizer(sublinear_tf=True,
-                                     preprocessor=identity_dummy_method,
-                                     tokenizer=identity_dummy_method,
-                                     ngram_range=(1, 1),
-                                     max_df=0.75, min_df=2,
-                                     max_features=30000,
-                                     stop_words=None  # 'english'
-                                     )
-
-        self.vectorizer.fit(self.text_to_bow_fun([d['text'] for d in data]))
-
-        self.target_binarizer = MultiLabelBinarizer()
-        self.target_binarizer.fit([d['labels'] for d in data])
-
-        self.model = LinearClfL1L2Regularized(input_dim=len(self.vectorizer.get_feature_names()),
+        self.dataprocessor.fit(data)
+        self.model = LinearClfL1L2Regularized(input_dim=len(self.dataprocessor.vectorizer.get_feature_names()),
                                               num_classes=len(self.target_binarizer.classes_.tolist()),
                                               alpha=self.alpha, l1_ratio=self.l1_ratio, is_multilabel=False
                                               )
@@ -145,21 +80,38 @@ class TfIdfElasticNetPytorchClf(GenericClassifier):
         losses, batch_losses = pytorch_methods.train(
             train_on_batch_fun=train_on_batch,
             dataloader=dataloader,
-            num_epochs=6,patience=5,tol=-1,
+            num_epochs=2,patience=5,tol=-1,
             verbose=1,
         )
 
         return self
 
     def build_dataloader(self,data,batch_size,mode):
-        dataset = BatchingDataset(data_supplier=lambda: data,
-                                  text_to_bow_fun=self.text_to_bow_fun,
-                                  vectorizer=self.vectorizer,
-                                  target_binarizer=self.target_binarizer,
-                                  batch_size=batch_size
-                                  )
+
+        self.batch_g = iterable_to_batches(data, batch_size)
+
+        def process_batch_fun(message):
+
+            try:
+                batch = next(self.batch_g)
+            except StopIteration:
+                self.batch_g = iterable_to_batches(data, batch_size)
+                raise StopIteration
+
+            if message == 'train':
+                inputs, targets = self.dataprocessor.process_inputs_and_targets(batch)
+                processed_batch = {'input': inputs.toarray().astype('float32'),
+                                   'target': targets}
+            elif message == 'eval':
+                processed_batch = {'input': self.dataprocessor.process_inputs(batch).toarray().astype('float32')}
+            else:
+                assert False
+
+            return processed_batch
+
+
         dataloader = pytorch_DataLoaders.build_messaging_DataLoader_from_dataset(
-            dataset=dataset,
+            dataset=DatasetWrapper(getbatch_fun=process_batch_fun),
             collate_fn=lambda x: to_torch_to_cuda(x[0]),
             num_workers=0,
             message_supplier=lambda: mode
@@ -179,3 +131,7 @@ class TfIdfElasticNetPytorchClf(GenericClassifier):
         probas = self.predict_proba(data)
         targets = self.target_binarizer.transform([d['labels'] for d in data]).astype('int64')
         return probas, targets
+
+    @property
+    def target_binarizer(self):
+        return self.dataprocessor.target_binarizer

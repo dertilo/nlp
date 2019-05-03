@@ -1,4 +1,8 @@
 import sys
+
+from text_classification.classifiers.tfidf_dataprocessor import raw_bow
+from text_classification.classifiers.tfidf_elasticnet_pytorch import TfIdfElasticNetPytorchClf
+
 sys.path.append('.')
 from collections import Counter
 from pprint import pprint
@@ -10,9 +14,7 @@ import numpy as np
 from model_evaluation.classification_metrics import calc_classification_metrics
 from model_evaluation.crossvalidation import calc_mean_std_scores
 from text_classification.classifiers.common import GenericClassifier
-from text_classification.classifiers.embedding_bag_pytorch import EmbeddingBagClassifier
-from text_classification.classifiers.tfidf_elasticnet_pytorch import TfIdfElasticNetPytorchClf
-from text_classification.classifiers.tfidf_sgd_sklearn import raw_bow, TfIdfSGDSklearnClf
+from text_classification.classifiers.tfidf_sgd_sklearn import TfIdfSGDSklearnClf
 from text_classification.data_readers import get_20newsgroups_data
 
 
