@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from pytorchic_bert.utils import split_last, merge_last
 
 
-class Config(NamedTuple):
+class BertConfig(NamedTuple):
     "Configuration for BERT model"
     vocab_size: int = None # Size of Vocabulary
     dim: int = 768 # Dimension of Hidden Layer in Transformer Encoder

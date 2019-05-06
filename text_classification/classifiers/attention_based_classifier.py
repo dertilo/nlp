@@ -1,3 +1,6 @@
+import sys
+sys.path.append('.')
+from scipy.sparse import csr_matrix
 import json
 import os
 import time
@@ -6,15 +9,15 @@ from pprint import pprint
 from typing import NamedTuple
 
 import torch
+from commons import data_io
 from commons.util_methods import iterable_to_batches
 from sklearn.preprocessing import MultiLabelBinarizer
 from torch import nn as nn
 from torch.utils.data import Dataset
 
-from getting_data.clef2019 import get_Clef2019_data
 from pytorch_util.multiprocessing_proved_dataloading import build_messaging_DataLoader_from_dataset_builder
 from pytorch_util.pytorch_methods import get_device, iterate_and_time
-from pytorchic_bert import checkpoint
+from pytorchic_bert import checkpoint, optim
 from pytorchic_bert import tokenization
 from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
 from pytorchic_bert.utils import set_seeds
@@ -43,7 +46,6 @@ class AttentionClassifier(nn.Module):
 
     def __init__(self, cfg, n_labels):
         super().__init__()
-        # self.transformer = selfatt_enc.Baseline(cfg)
         self.transformer = selfatt_enc.EncoderStack(cfg)
         self.fc = nn.Linear(cfg.dim, cfg.dim)
         self.drop = nn.Dropout(cfg.p_drop_hidden)
@@ -57,16 +59,6 @@ class AttentionClassifier(nn.Module):
         return logits
 
 
-# class BaselineClf(nn.Module):
-#     def __init__(self, cfg, n_labels):
-#         super().__init__()
-#         self.tok_embed = nn.Embedding(cfg.vocab_size, cfg.dim) # token embedding
-#         self.classifier = nn.Linear(cfg.dim, n_labels)
-#
-#     def forward(self, x, seg, mask):
-#         embedded = self.tok_embed(x)
-#         return self.classifier(torch.sum(embedded, dim=1))
-
 class AttentionDataset(Dataset):
 
     def __init__(self,
@@ -79,17 +71,28 @@ class AttentionDataset(Dataset):
         self.batch_size = batch_size
         data = self.dataprocessor.transform(raw_data)
         self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
-        self.batch_indizes_g = iterable_to_batches(iter(range(self.tensors[0].shape[0])), batch_size)
+        self.batch_indizes_g = self.build_idx_batch_generator(batch_size)
+
+    def build_idx_batch_generator(self, batch_size):
+        # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
+        # idx = torch.randperm(self.tensors[0].shape[0])
+        idx = range(self.tensors[0].shape[0])
+        return iterable_to_batches(iter(idx), batch_size)
 
     def __getitem__(self, index):
         message = index
         try:
             batch = next(self.batch_indizes_g)
         except StopIteration:
-            self.batch_indizes_g = iterable_to_batches(iter(range(self.tensors[0].shape[0])), self.batch_size)
+            # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
+            self.batch_indizes_g = self.build_idx_batch_generator(self.batch_size)
             raise StopIteration
 
         return tuple(tensor[batch] for tensor in self.tensors)
+
+    def __len__(self):
+        return int(np.ceil(self.tensors[0].shape[0]/self.batch_size))
+
 
 class DataProcessor(object):
 
@@ -111,7 +114,7 @@ class DataProcessor(object):
         self.target_binarizer.fit([d['labels'] for d in data])
 
     def transform(self,data):
-        return [self.pipeline.transform((d['labels'][0],d['text'],'')) for d in data]
+        return [self.pipeline.transform((d['labels'],d['text'],d['textb'])) for d in data]
 
 
 
@@ -148,9 +151,8 @@ class AttentionClassifierPytorch(GenericClassifier):
             num_workers=0
         )
         self.model = AttentionClassifier(self.model_cfg, self.num_labels)
-        print(self.model)
-        # optimizer = optim.optim4GPU(self.cfg, model) #TODO(tilo):holyJohn!
-        self.optimizer = torch.optim.RMSprop([p for p in self.model.parameters() if p.requires_grad], lr=0.01)
+        self.optimizer = optim.optim4GPU(self.cfg, self.model) #TODO(tilo):holyJohn!
+        # self.optimizer = torch.optim.RMSprop([p for p in self.model.parameters() if p.requires_grad], lr=0.01)
         self.train(dataloader,model_file, pretrain_file, data_parallel)
         return self
 
@@ -177,6 +179,24 @@ class AttentionClassifierPytorch(GenericClassifier):
         targets = self.target_binarizer.transform([d['labels'] for d in data]).astype('int64')
         return probas, targets
 
+    def evaluate(self,X):
+        def calc_acc(model, batch):
+            input_ids, segment_ids, input_mask, label_id = batch
+            logits = model(input_ids, segment_ids, input_mask)
+            _, label_pred = logits.max(1)
+            result = (label_pred == label_id).float() #.cpu().numpy()
+            return result
+
+        data_iter = build_messaging_DataLoader_from_dataset_builder(
+            dataset_builder=lambda i:AttentionDataset(X,self.dataprocessor,batch_size=128),
+            message_supplier=lambda :None,
+            collate_fn=lambda x:x[0],
+            num_workers=0
+        )
+
+        batch_results = self.eval(data_iter,calc_acc,model_file=None)
+        results= torch.cat(batch_results).mean()
+        return results.cpu().numpy().astype('float64')
 
     def train(self, dataloader, model_file=None, pretrain_file=None, data_parallel=True):
         self.device = get_device()
@@ -214,14 +234,15 @@ class AttentionClassifierPytorch(GenericClassifier):
                 loss_sum += loss
                 duration_sum+=dur
 
-            print('Epoch %d/%d : Average Loss %5.3f;epoch-dur: %0.1f secs; dataloader-dur: %0.1f secs'%(e+1, self.cfg.n_epochs, loss_sum/(i+1),time.time()-start,duration_sum))
+            print('Epoch %d/%d : Average Loss %5.3f;epoch-dur: %0.1f secs; dataloader-dur: %0.1f secs'
+                  %(e+1, self.cfg.n_epochs, loss_sum/(i+1),time.time()-start,duration_sum))
         # self.save(global_step)
 
 
     def eval(self, data_iter, evaluate, model_file, data_parallel=True):
 
         self.model.eval() # evaluation mode
-        self.load(model_file, None)
+        # self.load(model_file, None)
         model = self.model.to(self.device)
         if data_parallel: # use Data Parallelism with Multi-GPU
             model = nn.DataParallel(model)
@@ -257,33 +278,69 @@ class AttentionClassifierPytorch(GenericClassifier):
                         for key, value in torch.load(pretrain_file).items()
                         if key.startswith('transformer')}
                 ) # load only transformer parts
-
+            else:
+                assert False
 
     def save(self, i):
         assert False
         torch.save(self.model.state_dict(), # save model object before nn.DataParallel
             os.path.join(self.save_dir, 'model_steps_'+str(i)+'.pt'))
 
+import numpy as np
+
+
+def get_data(file):
+
+    def parse_line(line):
+        label, id1, id2, texta, textb = line.split('\t')
+        return {
+            'text': texta,
+            'textb': textb,
+            'labels': label}
+
+    lines_g = data_io.read_lines(file)
+    next(lines_g)
+    data = [parse_line(line) for line in lines_g]
+    return data
+
 if __name__ == '__main__':
 
     from pathlib import Path
     home = str(Path.home())
     cwd = home
-    data = [{'text':d['utterance'],'label':str(d['label'])} for d in get_Clef2019_data(cwd+'/data/fact_checking/clef2019')]
+    data = get_data(home + '/data/glue/MRPC/train.tsv')
 
-    label_counter = Counter([d['label'] for d in data])
+    label_counter = Counter([d['labels'] for d in data])
     pprint(label_counter)
 
-    model_cfg = 'config/bert_tiny.json'
-    cfg = AttentionClassifierConfig(lr=1e-4, n_epochs=1, batch_size=128)
+    train_data = data
+    test_data = get_data(home + '/data/glue/MRPC/dev.tsv')
+    label_counter = Counter([d['labels'] for d in test_data])
+    print(label_counter)
 
-    model_cfg = selfatt_enc.BertConfig.from_json(model_cfg)
-    max_len = model_cfg.max_len
+    cfg = AttentionClassifierConfig.from_json('pytorchic_bert/config/train_mrpc.json')
+
+    model_cfg = selfatt_enc.BertConfig.from_json('pytorchic_bert/config/bert_base.json')
+    max_len = 128
 
     set_seeds(cfg.seed)
 
     vocab = cwd+'/data/models/uncased_L-12_H-768_A-12/vocab.txt'
 
     pipeline = AttentionClassifierPytorch(cfg, model_cfg, vocab, max_len, list(label_counter.keys()))
-    pipeline.fit(data)
-    proba = pipeline.predict_proba(data)
+    pretrain_file = home + '/data/models/uncased_L-12_H-768_A-12/bert_model.ckpt'
+    # pretrain_file = None
+    pipeline.fit(data, pretrain_file=pretrain_file)
+
+
+    print(pipeline.evaluate(train_data))
+    print(pipeline.evaluate(test_data))
+    # proba, y_train = pipeline.predict_proba_encode_targets(train_data)
+    # pred = np.array(proba == np.expand_dims(np.max(proba, axis=1), 1), dtype='int64')
+    # target_names = pipeline.target_binarizer.classes_.tolist()
+    # train_scores = calc_classification_metrics(proba, pred, y_train, target_names=target_names)
+    # pprint(train_scores['f1-micro'])
+    # proba, y_test = pipeline.predict_proba_encode_targets(test_data)
+    # pred = np.array(proba == np.expand_dims(np.max(proba, axis=1), 1), dtype='int64')
+    # test_scores = calc_classification_metrics(proba, pred, y_test, target_names=target_names)
+    # pprint(test_scores['f1-micro'])
