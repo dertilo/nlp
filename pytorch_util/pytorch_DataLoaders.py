@@ -1,3 +1,4 @@
+import abc
 from collections import Counter
 from typing import List, Callable, Any
 
@@ -6,6 +7,15 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import SequentialSampler, BatchSampler, WeightedRandomSampler, Sampler
 
+
+class DatasetWrapper(Dataset):
+
+    def __init__(self, getbatch_fun) -> None:
+        super().__init__()
+        self.get_batch_fun = getbatch_fun
+
+    def __getitem__(self, index):
+        return self.get_batch_fun(message=index)
 
 class PyTorchFromListDataset(torch.utils.data.Dataset):
     def __init__(self, data_target_tuples:List):
@@ -66,9 +76,6 @@ class MessagingSampler(Sampler):
     def __iter__(self):
         while True:
             yield [self.message_supplier()]
-
-    def __len__(self):
-        assert False
 
 def build_messaging_DataLoader_from_dataset(
         dataset:Dataset,

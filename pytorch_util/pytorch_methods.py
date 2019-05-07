@@ -12,7 +12,6 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torch
-from torch.utils.data.dataloader import _DataLoaderIter
 
 USE_CUDA = torch.cuda.is_available()
 
@@ -88,7 +87,7 @@ def to_cuda(x,device=None):
 def predict_with_softmax(pytorch_nn_model:nn.Module, batch_iterable:Iterable[Dict[str,Variable]]):
     pytorch_nn_model.eval()
     return (p for batch in batch_iterable
-                for p in F.softmax(pytorch_nn_model(**to_cuda(batch)), dim=1).data.cpu().numpy().tolist())
+                for p in F.softmax(pytorch_nn_model(**batch), dim=1).data.cpu().numpy().tolist())
 
 def predict_rawscores(pytorch_nn_model:nn.Module, batch_iterable:Iterable[Dict[str,Variable]]):
     pytorch_nn_model.eval()
