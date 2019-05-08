@@ -15,11 +15,8 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 (see http://help.sentiment140.com/for-students/)
 
 '''
-
+import gzip
 import sys
-
-from commons import data_io
-
 
 def parse_line(line:str):
     s = line.split('","')
@@ -34,8 +31,22 @@ def parse_line(line:str):
         'text':text[:-1] # very last is a "
     }
 
-def get_sentiment140_data(datafile,limit=sys.maxsize):
-    return (parse_line(line) for line in data_io.read_lines(datafile,limit=limit))
 
-if __name__ == '__main__':
-    data = list(get_sentiment140_data('/home/tilo/data/Sentiment140/training.1600000.processed.noemoticon.csv',1000))
+def read_lines(file, mode ='b', encoding ='utf-8', limit=sys.maxsize):
+    counter = 0
+    with gzip.open(file, mode='r'+mode) if file.endswith('.gz') else open(file,mode='r'+mode) as f:
+        for line in f:
+            counter+=1
+            if counter>limit:
+                break
+            if mode == 'b':
+                try:
+                    yield line.decode(encoding).replace('\n', '')
+                except:
+                    pass
+            elif mode == 't':
+                yield line.replace('\n','')
+
+
+def get_sentiment140_data(datafile,limit=sys.maxsize):
+    return (parse_line(line) for line in read_lines(datafile,limit=limit))
