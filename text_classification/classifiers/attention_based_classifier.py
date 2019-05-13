@@ -1,6 +1,6 @@
 import sys
 sys.path.append('.')
-from scipy.sparse import csr_matrix # TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found (required by some-path-here/lib/python3.7/site-packages/scipy/sparse/_sparsetools.cpython-37m-x86_64-linux-gnu.so)
+from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
 from pytorch_util import pytorch_methods
 from sklearn.externals import joblib
@@ -48,7 +48,7 @@ class TrainConfig(NamedTuple):
 
 class AttentionClassifier(nn.Module):
 
-    def __init__(self, cfg, n_labels):
+    def __init__(self, cfg: selfatt_enc.BertConfig, n_labels):
         super().__init__()
         self.bert_encoder = selfatt_enc.EncoderStack(cfg)
         self.fc = nn.Linear(cfg.dim, cfg.dim)
@@ -62,6 +62,13 @@ class AttentionClassifier(nn.Module):
         logits = self.classifier(self.drop(pooled_h))
         return logits
 
+    @staticmethod
+    def build_loss_fun(criterion):
+        def loss_fun(model,batch):
+            input_ids, segment_ids, input_mask, label_id = batch
+            logits = model.forward(input_ids, segment_ids, input_mask)
+            return criterion(logits, label_id)
+        return loss_fun
 
 class AttentionDataset(Dataset):
 
@@ -157,18 +164,20 @@ class AttentionClassifierPytorch(GenericClassifier):
             num_workers=0
         )
 
-        model = self.prepare_model_for_training(data_parallel, model_file, pretrain_file)
+        model,loss_fun = self.prepare_model_for_training(data_parallel, model_file, pretrain_file)
 
         self.optimizer = optim.optim4GPU(self.train_config, self.model) #TODO(tilo):holyJohn!
-        # self.optimizer = torch.optim.RMSprop([p for p in self.model.parameters() if p.requires_grad], lr=0.01)
-        criterion = nn.CrossEntropyLoss()
+        # if False:
+        #     p_cond = lambda p_name,p: 'bert_encoder' not in p_name and p.requires_grad
+        # else:
+        #     p_cond = lambda p_name,p: p.requires_grad
+        # params = [p for p_name, p in self.model.named_parameters() if p_cond(p_name,p)]
+        #
+        # self.optimizer = torch.optim.RMSprop(params, lr=0.01)
 
         def train_on_batch(batch):
             self.optimizer.zero_grad()
-
-            input_ids, segment_ids, input_mask, label_id = batch
-            logits = model(input_ids, segment_ids, input_mask)
-            loss = criterion(logits, label_id).mean()  # mean() for Data Parallelism
+            loss = loss_fun(model,batch).mean()  # mean() for Data Parallelism
             loss.backward()
             self.optimizer.step()
             return loss.item()
@@ -185,11 +194,12 @@ class AttentionClassifierPytorch(GenericClassifier):
         elif pretrain_file is not None:
             self.load_bert_encoder(pretrain_file)
 
+        loss_fun = self.model.build_loss_fun(nn.CrossEntropyLoss())
         self.model.train()
         model = self.model.to(self.device)
         if data_parallel:
             model = nn.DataParallel(model)
-        return model
+        return model,loss_fun
 
     def predict_proba(self,X,data_parallel=True):
 
@@ -307,7 +317,7 @@ if __name__ == '__main__':
     home = str(Path.home())
     train_data, test_data = load_data()
 
-    cfg = TrainConfig(seed=3,n_epochs=2)#.from_json('pytorchic_bert/config/train_mrpc.json')
+    cfg = TrainConfig(seed=42,n_epochs=2)#.from_json('pytorchic_bert/config/train_mrpc.json')
     model_cfg = selfatt_enc.BertConfig.from_json('pytorchic_bert/config/bert_base.json')
     max_len = 128
 

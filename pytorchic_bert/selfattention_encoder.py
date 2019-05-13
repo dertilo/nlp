@@ -75,14 +75,14 @@ class Embeddings(nn.Module):
 
 class MultiHeadedSelfAttention(nn.Module):
     """ Multi-Headed Dot Product Attention """
-    def __init__(self, cfg):
+    def __init__(self, dim,n_heads, p_drop_attn):
         super().__init__()
-        self.proj_q = nn.Linear(cfg.dim, cfg.dim)
-        self.proj_k = nn.Linear(cfg.dim, cfg.dim)
-        self.proj_v = nn.Linear(cfg.dim, cfg.dim)
-        self.drop = nn.Dropout(cfg.p_drop_attn)
+        self.proj_q = nn.Linear(dim, dim)
+        self.proj_k = nn.Linear(dim, dim)
+        self.proj_v = nn.Linear(dim, dim)
+        self.drop = nn.Dropout(p_drop_attn)
         self.scores = None # for visualization
-        self.n_heads = cfg.n_heads
+        self.n_heads = n_heads
 
     def forward(self, x, mask):
         """
@@ -122,10 +122,10 @@ class PositionWiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    """ Transformer Block """
-    def __init__(self, cfg):
+
+    def __init__(self, cfg:BertConfig):
         super().__init__()
-        self.attn = MultiHeadedSelfAttention(cfg)
+        self.attn = MultiHeadedSelfAttention(cfg.dim,cfg.n_heads,cfg.p_drop_attn)
         self.proj = nn.Linear(cfg.dim, cfg.dim)
         self.norm1 = LayerNorm(cfg)
         self.pwff = PositionWiseFeedForward(cfg)
@@ -141,7 +141,7 @@ class EncoderLayer(nn.Module):
 
 class EncoderStack(nn.Module):
     
-    def __init__(self, cfg):
+    def __init__(self, cfg:BertConfig):
         super().__init__()
         self.embed = Embeddings(cfg)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg.n_layers)])
