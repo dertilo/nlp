@@ -12,21 +12,64 @@ import numpy as np
 from torch.utils.data import DataLoader
 
 from pytorch_util import pytorch_methods, pytorch_DataLoaders
-from pytorch_util.pytorch_DataLoaders import DatasetWrapper
+from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
 from pytorch_util.pytorch_methods import to_torch_to_cuda
-from text_classification.classifiers.common import GenericClassifier
+from text_classification.classifiers.common import GenericClassifier, DataProcessorInterface
 from text_processing.text_processor import TokenizeIndexer, PADDING
 
 USE_CUDA = torch.cuda.is_available()
 
-def process_inputs(batch_data):
-    assert all([len(d['data'])>0 for d in batch_data])
-    offsets = np.array(np.cumsum([0]+[len(d['data']) for d in batch_data]).tolist()[:-1])
-    batch_concatenated_idx_seqs = np.array([idx for d in batch_data for idx in d['data']])
-    assert max(offsets)<len(batch_concatenated_idx_seqs)
-    return {
-        'concated_batch_idx_seqs':batch_concatenated_idx_seqs.astype('int64'),
-        'seq_start_offsets':offsets.astype('int64')}
+class EmbeddingBagDataProcessor(DataProcessorInterface):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.target_binarizer = MultiLabelBinarizer()
+        self.tokenizendexer = TokenizeIndexer()
+
+    def fit(self, data):
+        self.tokenizendexer.fit((d['text'] for d in data))
+        self.target_binarizer.fit([d['labels'] for d in data])
+
+    def transform(self, data):
+        raise NotImplementedError
+
+    def build_get_batch_fun(self, raw_data, batch_size):
+        def impute_PADDING_if_empty(seq):
+            if len(seq)==0:
+                seq = [self.tokenizendexer.token2key[PADDING]]
+            return seq
+
+        def process_inputs(batch_data):
+            seqs = [impute_PADDING_if_empty(self.tokenizendexer.transform_to_seq(text)) for text in batch_data]
+            offsets = np.array(np.cumsum([0] + [len(seq) for seq in seqs]).tolist()[:-1])
+            batch_concatenated_idx_seqs = np.array([idx for seq in seqs for idx in seq])
+            assert max(offsets) < batch_concatenated_idx_seqs.shape[0]
+            return {
+                'concated_batch_idx_seqs': batch_concatenated_idx_seqs.astype('int64'),
+                'seq_start_offsets': offsets.astype('int64')}
+
+        self.batch_g = iterable_to_batches(raw_data, batch_size)
+
+        def process_batch_fun(message):
+
+            try:
+                batch = next(self.batch_g)
+            except StopIteration:
+                self.batch_g = iterable_to_batches(raw_data, batch_size)
+                raise StopIteration
+
+            if message == 'train':
+                processed_batch = process_inputs([d['text'] for d in batch])
+                processed_batch['target']=self.target_binarizer.transform([d['labels'] for d in batch]).astype('float32')
+
+            elif message == 'eval':
+                processed_batch = process_inputs([d['text'] for d in batch])
+            else:
+                assert False
+
+            return processed_batch
+
+        return process_batch_fun
 
 class BoeClfPytorchModule(nn.Module):
     def __init__(self,
@@ -76,68 +119,31 @@ class BoeClfPytorchModule(nn.Module):
 
 
 class EmbeddingBagClassifier(GenericClassifier):
-    def __init__(self,embedding_dim=3, alpha = 0.00001,l1_ratio=0.15) -> None:
+    def __init__(self,
+                 # dataprocessor:DataProcessorInterface,
+                 embedding_dim=3, alpha = 0.00001,l1_ratio=0.15) -> None:
         super().__init__()
-        self.tokenizendexer = TokenizeIndexer()
-
+        self.dataprocessor = EmbeddingBagDataProcessor()
         self.embedding_dim = embedding_dim
         self.alpha = alpha
         self.l1_ratio = l1_ratio
-        self.target_binarizer = None
 
     def batch_generator(self, raw_data:List[Dict], batch_size=32,mode='eval') -> DataLoader:
-        def impute_PADDING_if_empty(seq):
-            if len(seq)==0:
-                seq = [self.tokenizendexer.token2key[PADDING]]
-            return seq
-
-        def process_inputs(batch_data):
-            seqs = [impute_PADDING_if_empty(self.tokenizendexer.transform_to_seq(text)) for text in batch_data]
-            offsets = np.array(np.cumsum([0] + [len(seq) for seq in seqs]).tolist()[:-1])
-            batch_concatenated_idx_seqs = np.array([idx for seq in seqs for idx in seq])
-            assert max(offsets) < batch_concatenated_idx_seqs.shape[0]
-            return {
-                'concated_batch_idx_seqs': batch_concatenated_idx_seqs.astype('int64'),
-                'seq_start_offsets': offsets.astype('int64')}
-
-        self.batch_g = iterable_to_batches(raw_data, batch_size)
-
-        def process_batch_fun(message):
-
-            try:
-                batch = next(self.batch_g)
-            except StopIteration:
-                self.batch_g = iterable_to_batches(raw_data, batch_size)
-                raise StopIteration
-
-            if message == 'train':
-                processed_batch = process_inputs([d['text'] for d in batch])
-                processed_batch['target']=self.target_binarizer.transform([d['labels'] for d in batch]).astype('float32')
-
-            elif message == 'eval':
-                processed_batch = process_inputs([d['text'] for d in batch])
-            else:
-                assert False
-
-            return processed_batch
 
         return pytorch_DataLoaders.build_messaging_DataLoader_from_dataset(
-            dataset=DatasetWrapper(getbatch_fun=process_batch_fun),
+            dataset=GetBatchFunDatasetWrapper(getbatch_fun=self.dataprocessor.build_get_batch_fun(raw_data,batch_size)),
             num_workers=0,
             collate_fn=lambda x:to_torch_to_cuda(x[0]),
             message_supplier=lambda: mode
         )
 
     def fit(self,X,y=None):
-        self.tokenizendexer.fit((d['text'] for d in X))
-
-        self.target_binarizer = MultiLabelBinarizer()
-        self.target_binarizer.fit([d['labels'] for d in X])
+        self.dataprocessor.fit(X)
 
         self.model = BoeClfPytorchModule(
+            num_classes=self.dataprocessor.num_classes,
+            vocab_size=self.dataprocessor.tokenizendexer.get_vocab_size(),
             embedding_dim=self.embedding_dim,
-            num_classes=len(self.target_binarizer.classes_.tolist()),
-            vocab_size=self.tokenizendexer.get_vocab_size(),
             alpha=self.alpha, l1_ratio=self.l1_ratio, is_multilabel=True
         )
         optimizer = torch.optim.RMSprop([p for p in self.model.parameters() if p.requires_grad], lr=0.01)
@@ -171,4 +177,8 @@ class EmbeddingBagClassifier(GenericClassifier):
         probas = self.predict_proba(data)
         targets = self.target_binarizer.transform([d['labels'] for d in data]).astype('int64')
         return probas, targets
+
+    @property
+    def target_binarizer(self):
+        return self.dataprocessor.target_binarizer
 
