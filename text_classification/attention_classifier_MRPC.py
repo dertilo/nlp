@@ -3,8 +3,8 @@ import sys
 sys.path.append('.')
 from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
-from text_classification.classifiers.attention_based_classifier import TrainConfig, AttentionClassifierPytorch, \
-    DataProcessor
+from text_classification.classifiers.attention_based_classifier import TrainConfig, AttentionClassifierPytorch
+from text_classification.classifiers.common import DataProcessorInterface
 from commons.util_methods import iterable_to_batches
 from sklearn.preprocessing import MultiLabelBinarizer
 
@@ -22,7 +22,7 @@ from commons import data_io
 from pytorchic_bert.utils import set_seeds
 import pytorchic_bert.selfattention_encoder as selfatt_enc
 
-class TwoSentDataProcessor(DataProcessor):
+class TwoSentDataProcessor(DataProcessorInterface):
 
     def __init__(self,
                  vocab_file,
@@ -67,7 +67,19 @@ class TwoSentDataProcessor(DataProcessor):
                 batch_indizes_g[0] = build_idx_batch_generator(batch_size)
                 raise StopIteration
 
-            return tuple(tensor[batch] for tensor in tensors)
+            out = {'input_ids':tensors[0][batch],
+                   'segment_ids':tensors[1][batch],
+                   'input_mask':tensors[2][batch]
+                   }
+
+            if message == 'eval':
+                pass
+            elif message == 'train':
+                out['target'] = tensors[3][batch]
+            else:
+                assert False
+            return out
+
         return get_batch
 
 

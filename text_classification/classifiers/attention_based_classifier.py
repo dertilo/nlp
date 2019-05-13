@@ -1,6 +1,5 @@
 import json
 import os
-from abc import abstractmethod
 from typing import NamedTuple
 
 import torch
@@ -12,9 +11,9 @@ import pytorchic_bert.selfattention_encoder as selfatt_enc
 from pytorch_util import pytorch_methods
 from pytorch_util.multiprocessing_proved_dataloading import build_messaging_DataLoader_from_dataset_builder
 from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
-from pytorch_util.pytorch_methods import get_device
+from pytorch_util.pytorch_methods import get_device, to_torch_to_cuda
 from pytorchic_bert import optim
-from text_classification.classifiers.common import GenericClassifier
+from text_classification.classifiers.common import GenericClassifier, DataProcessorInterface
 import numpy as np
 
 class TrainConfig(NamedTuple):
@@ -52,31 +51,17 @@ class AttentionClassifier(nn.Module):
     @staticmethod
     def build_loss_fun(criterion):
         def loss_fun(model,batch):
-            input_ids, segment_ids, input_mask, label_id = batch
-            logits = model.forward(input_ids, segment_ids, input_mask)
-            return criterion(logits, label_id)
+            target = batch.pop('target')
+            logits = model.forward(**batch)
+            return criterion(logits, target)
         return loss_fun
 
-
-class DataProcessor(object):
-
-    @abstractmethod
-    def fit(self, data):
-        raise NotImplementedError
-
-    @abstractmethod
-    def transform(self,data):
-        raise NotImplementedError
-
-    @abstractmethod
-    def build_get_batch_fun(self,raw_data,batch_size):
-        raise NotImplementedError
 
 class AttentionClassifierPytorch(GenericClassifier):
     def __init__(self,
                  train_config:TrainConfig,
                  model_cfg: selfatt_enc.BertConfig,
-                 dataprocessor: DataProcessor,
+                 dataprocessor: DataProcessorInterface,
                  ) -> None:
         super().__init__()
         self.model_cfg = model_cfg
@@ -86,7 +71,7 @@ class AttentionClassifierPytorch(GenericClassifier):
         self.model = None
 
     def _build_model(self):
-        return AttentionClassifier(self.model_cfg, len(self.dataprocessor.target_binarizer.classes_.tolist()))
+        return AttentionClassifier(self.model_cfg, self.dataprocessor.num_classes)
 
     def fit(self,X,y=None,
             save_dir='./save_dir',
@@ -96,13 +81,6 @@ class AttentionClassifierPytorch(GenericClassifier):
             ):
         self.save_dir = save_dir
         self.dataprocessor.fit(X)
-
-        dataloader = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda _:GetBatchFunDatasetWrapper(self.dataprocessor.build_get_batch_fun(X,batch_size=32)),
-            message_supplier=lambda :None,
-            collate_fn=lambda x:[t.to(self.device) for t in x[0]],
-            num_workers=0
-        )
 
         model,loss_fun = self.prepare_model_for_training(data_parallel, model_file, pretrain_file)
 
@@ -122,8 +100,19 @@ class AttentionClassifierPytorch(GenericClassifier):
             self.optimizer.step()
             return loss.item()
 
-        pytorch_methods.train(train_on_batch, dataloader, self.train_config.n_epochs,verbose=True)
+        pytorch_methods.train(train_on_batch, self.build_dataloader(X,mode='train',batch_size=32),
+                              self.train_config.n_epochs,verbose=True)
         return self
+
+    def build_dataloader(self,raw_data,mode,batch_size):
+        dataloader = build_messaging_DataLoader_from_dataset_builder(
+            dataset_builder=lambda _: GetBatchFunDatasetWrapper(
+                self.dataprocessor.build_get_batch_fun(raw_data, batch_size=batch_size)),
+            message_supplier=lambda: mode,
+            collate_fn=lambda x: to_torch_to_cuda(x[0]),
+            num_workers=0
+        )
+        return dataloader
 
     def prepare_model_for_training(self, data_parallel, model_file, pretrain_file):
         if self.model is None:
@@ -142,25 +131,17 @@ class AttentionClassifierPytorch(GenericClassifier):
         return model,loss_fun
 
     def predict_proba(self,X,data_parallel=True):
-
-        data_iter = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda _: GetBatchFunDatasetWrapper(self.dataprocessor.build_get_batch_fun(X, batch_size=1024)),
-            message_supplier=lambda :None,
-            collate_fn=lambda x:x[0],
-            num_workers=0
-        )
-
         self.model.eval()
         model = self.model.to(self.device)
         if data_parallel:
             model = nn.DataParallel(model)
 
         with torch.no_grad():
-            probas = [p for batch in data_iter
-                    for p in F.softmax(model(*batch[:-1]), dim=1).data.cpu().numpy().tolist()]
-
-            results= np.array(probas)
-        return results.astype('float64')
+            tmp = pytorch_methods.predict_with_softmax(
+                pytorch_nn_model=model,
+                batch_iterable=self.build_dataloader(X, batch_size=1024, mode='eval'))
+            probas = np.array(list(tmp)).astype('float64')
+        return probas
 
     def predict_proba_encode_targets(self, data):
         probas = self.predict_proba(data)

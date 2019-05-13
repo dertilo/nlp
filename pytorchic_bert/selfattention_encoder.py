@@ -40,10 +40,10 @@ def gelu(x):
 
 class LayerNorm(nn.Module):
     "A layernorm module in the TF style (epsilon inside the square root)."
-    def __init__(self, cfg, variance_epsilon=1e-12):
+    def __init__(self, dim, variance_epsilon=1e-12):
         super().__init__()
-        self.gamma = nn.Parameter(torch.ones(cfg.dim))
-        self.beta  = nn.Parameter(torch.zeros(cfg.dim))
+        self.gamma = nn.Parameter(torch.ones(dim))
+        self.beta  = nn.Parameter(torch.zeros(dim))
         self.variance_epsilon = variance_epsilon
 
     def forward(self, x):
@@ -55,14 +55,14 @@ class LayerNorm(nn.Module):
 
 class Embeddings(nn.Module):
     "The embedding module from word, position and token_type embeddings."
-    def __init__(self, cfg):
+    def __init__(self, vocab_size,dim,max_len,n_segments,p_drop_hidden):
         super().__init__()
-        self.tok_embed = nn.Embedding(cfg.vocab_size, cfg.dim) # token embedding
-        self.pos_embed = nn.Embedding(cfg.max_len, cfg.dim) # position embedding
-        self.seg_embed = nn.Embedding(cfg.n_segments, cfg.dim) # segment(token type) embedding
+        self.tok_embed = nn.Embedding(vocab_size, dim) # token embedding
+        self.pos_embed = nn.Embedding(max_len, dim) # position embedding
+        self.seg_embed = nn.Embedding(n_segments, dim) # segment(token type) embedding
 
-        self.norm = LayerNorm(cfg)
-        self.drop = nn.Dropout(cfg.p_drop_hidden)
+        self.norm = LayerNorm(dim)
+        self.drop = nn.Dropout(p_drop_hidden)
 
     def forward(self, x, seg):
         seq_len = x.size(1)
@@ -110,10 +110,10 @@ class MultiHeadedSelfAttention(nn.Module):
 
 class PositionWiseFeedForward(nn.Module):
     """ FeedForward Neural Networks for each position """
-    def __init__(self, cfg):
+    def __init__(self, dim,dim_ff):
         super().__init__()
-        self.fc1 = nn.Linear(cfg.dim, cfg.dim_ff)
-        self.fc2 = nn.Linear(cfg.dim_ff, cfg.dim)
+        self.fc1 = nn.Linear(dim, dim_ff)
+        self.fc2 = nn.Linear(dim_ff, dim)
         #self.activ = lambda x: activ_fn(cfg.activ_fn, x)
 
     def forward(self, x):
@@ -127,9 +127,9 @@ class EncoderLayer(nn.Module):
         super().__init__()
         self.attn = MultiHeadedSelfAttention(cfg.dim,cfg.n_heads,cfg.p_drop_attn)
         self.proj = nn.Linear(cfg.dim, cfg.dim)
-        self.norm1 = LayerNorm(cfg)
-        self.pwff = PositionWiseFeedForward(cfg)
-        self.norm2 = LayerNorm(cfg)
+        self.norm1 = LayerNorm(cfg.dim)
+        self.pwff = PositionWiseFeedForward(cfg.dim,cfg.dim_ff)
+        self.norm2 = LayerNorm(cfg.dim)
         self.drop = nn.Dropout(cfg.p_drop_hidden)
 
     def forward(self, x, mask):
@@ -143,7 +143,7 @@ class EncoderStack(nn.Module):
     
     def __init__(self, cfg:BertConfig):
         super().__init__()
-        self.embed = Embeddings(cfg)
+        self.embed = Embeddings(cfg.vocab_size,cfg.dim,cfg.max_len,cfg.n_segments,cfg.p_drop_hidden)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg.n_layers)])
 
     def forward(self, x, seg, mask):
