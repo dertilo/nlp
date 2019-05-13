@@ -2,6 +2,7 @@ import sys
 sys.path.append('.')
 from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
+from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
 from pytorch_util import pytorch_methods
 from sklearn.externals import joblib
 from model_evaluation.classification_metrics import calc_classification_metrics
@@ -70,41 +71,6 @@ class AttentionClassifier(nn.Module):
             return criterion(logits, label_id)
         return loss_fun
 
-class AttentionDataset(Dataset):
-
-    def __init__(self,
-                 raw_data,
-                 dataprocessor,
-                 batch_size
-                 ):
-
-        self.dataprocessor = dataprocessor
-        self.batch_size = batch_size
-        data = self.dataprocessor.transform(raw_data)
-        self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
-        self.batch_indizes_g = self.build_idx_batch_generator(batch_size)
-
-    def build_idx_batch_generator(self, batch_size):
-        # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
-        # idx = torch.randperm(self.tensors[0].shape[0])
-        idx = range(self.tensors[0].shape[0])
-        return iterable_to_batches(iter(idx), batch_size)
-
-    def __getitem__(self, index):
-        message = index
-        try:
-            batch = next(self.batch_indizes_g)
-        except StopIteration:
-            # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
-            self.batch_indizes_g = self.build_idx_batch_generator(self.batch_size)
-            raise StopIteration
-
-        return tuple(tensor[batch] for tensor in self.tensors)
-
-    def __len__(self):
-        return int(np.ceil(self.tensors[0].shape[0]/self.batch_size))
-
-
 class DataProcessor(object):
 
     def __init__(self,
@@ -129,19 +95,40 @@ class DataProcessor(object):
     def transform(self,data):
         return [self.pipeline.transform((d['labels'], d['text'], d['textb'])) for d in data]
 
+    def build_get_batch_fun(self,raw_data,batch_size):
 
+        tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*self.transform(raw_data))]
+
+        def build_idx_batch_generator(batch_size):
+            # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
+            # idx = torch.randperm(self.tensors[0].shape[0])
+            idx = range(tensors[0].shape[0])
+            return iterable_to_batches(iter(idx), batch_size)
+
+        batch_indizes_g =[0]
+        batch_indizes_g[0] = build_idx_batch_generator(batch_size)
+
+        def get_batch(message):
+            try:
+                batch = next(batch_indizes_g[0])
+            except StopIteration:
+                # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
+                batch_indizes_g[0] = build_idx_batch_generator(batch_size)
+                raise StopIteration
+
+            return tuple(tensor[batch] for tensor in tensors)
+        return get_batch
 
 class AttentionClassifierPytorch(GenericClassifier):
     def __init__(self,
                  train_config:TrainConfig,
                  model_cfg: selfatt_enc.BertConfig,
-                 vocab_file,
-                 max_len,
+                 dataprocessor:DataProcessor,
                  ) -> None:
         super().__init__()
         self.model_cfg = model_cfg
         self.train_config = train_config
-        self.dataprocessor = DataProcessor(vocab_file=vocab_file,max_len=max_len)
+        self.dataprocessor =  dataprocessor
         self.device = get_device()
         self.model = None
 
@@ -158,7 +145,7 @@ class AttentionClassifierPytorch(GenericClassifier):
         self.dataprocessor.fit(X)
 
         dataloader = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda i:AttentionDataset(X, self.dataprocessor, batch_size=self.train_config.batch_size),
+            dataset_builder=lambda _:GetBatchFunDatasetWrapper(self.dataprocessor.build_get_batch_fun(X,batch_size=32)),
             message_supplier=lambda :None,
             collate_fn=lambda x:[t.to(self.device) for t in x[0]],
             num_workers=0
@@ -204,7 +191,7 @@ class AttentionClassifierPytorch(GenericClassifier):
     def predict_proba(self,X,data_parallel=True):
 
         data_iter = build_messaging_DataLoader_from_dataset_builder(
-            dataset_builder=lambda i:AttentionDataset(X,self.dataprocessor,batch_size=1024),
+            dataset_builder=lambda _: GetBatchFunDatasetWrapper(self.dataprocessor.build_get_batch_fun(X, batch_size=1024)),
             message_supplier=lambda :None,
             collate_fn=lambda x:x[0],
             num_workers=0
@@ -317,15 +304,15 @@ if __name__ == '__main__':
     home = str(Path.home())
     train_data, test_data = load_data()
 
-    cfg = TrainConfig(seed=42,n_epochs=2)#.from_json('pytorchic_bert/config/train_mrpc.json')
+    cfg = TrainConfig(seed=42,n_epochs=1)#.from_json('pytorchic_bert/config/train_mrpc.json')
     model_cfg = selfatt_enc.BertConfig.from_json('pytorchic_bert/config/bert_base.json')
     max_len = 128
 
     set_seeds(cfg.seed)
 
     vocab = home+'/data/models/uncased_L-12_H-768_A-12/vocab.txt'
-
-    pipeline = AttentionClassifierPytorch(cfg, model_cfg, vocab, max_len)
+    dp = DataProcessor(vocab_file=vocab,max_len=max_len)
+    pipeline = AttentionClassifierPytorch(cfg, model_cfg,dp)
     pretrain_file = home + '/data/models/uncased_L-12_H-768_A-12/bert_encoder_pytorch.pt'
     # pretrain_file = None
     save_path = home + '/nlp/saved_models'
