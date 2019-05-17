@@ -9,7 +9,7 @@ from commons.util_methods import iterable_to_batches
 from sklearn.preprocessing import MultiLabelBinarizer
 
 from pytorchic_bert import tokenization
-from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TokenIndexing
+from pytorchic_bert.preprocessing import Pipeline, SentencePairTokenizer, AddSpecialTokensWithTruncation, TwoSentTokenIndexing
 
 from model_evaluation.classification_metrics import calc_classification_metrics
 import time
@@ -38,13 +38,13 @@ class TwoSentDataProcessor(DataProcessorInterface):
         class_labels = self.target_binarizer.classes_.tolist()
         tokenizer = tokenization.FullTokenizer(vocab_file=self.vocab_file, do_lower_case=True)
         self.pipeline = Pipeline([SentencePairTokenizer(tokenizer.convert_to_unicode, tokenizer.tokenize),
-                             AddSpecialTokensWithTruncation(self.max_len),
-                             TokenIndexing(tokenizer.convert_tokens_to_ids, class_labels, self.max_len)
-                             ]
+                                  AddSpecialTokensWithTruncation(self.max_len),
+                                  TwoSentTokenIndexing(tokenizer.convert_tokens_to_ids, class_labels, self.max_len)
+                                  ]
                             )
 
     def transform(self,data):
-        return [self.pipeline.transform((d['labels'], d['text'], d['textb'])) for d in data]
+        return [self.pipeline.transform((d['labels'][0], d['text'], d['textb'])) for d in data]
 
     def build_get_batch_fun(self,raw_data,batch_size):
 
@@ -92,7 +92,7 @@ if __name__ == '__main__':
             return {
                 'text': texta,
                 'textb': textb,
-                'labels': label}
+                'labels': [label]}
 
         lines_g = data_io.read_lines(file)
         next(lines_g)
@@ -117,10 +117,10 @@ if __name__ == '__main__':
 
     def load_data():
         train_data = get_data(home + '/data/glue/MRPC/train.tsv')
-        label_counter = Counter([d['labels'] for d in train_data])
+        label_counter = Counter([l for d in train_data for l in d['labels']])
         pprint(label_counter)
         test_data = get_data(home + '/data/glue/MRPC/dev.tsv')
-        label_counter = Counter([d['labels'] for d in test_data])
+        label_counter = Counter([l for d in test_data for l in d['labels']])
         print(label_counter)
         return train_data, test_data
 
