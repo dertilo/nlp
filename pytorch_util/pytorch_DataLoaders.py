@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from torch.utils.data.sampler import SequentialSampler, BatchSampler, WeightedRandomSampler, Sampler
 
 
-class DatasetWrapper(Dataset):
+class GetBatchFunDatasetWrapper(Dataset):
 
     def __init__(self, getbatch_fun) -> None:
         super().__init__()

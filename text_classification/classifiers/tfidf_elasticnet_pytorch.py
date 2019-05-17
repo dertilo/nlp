@@ -8,7 +8,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from torch.autograd import Variable
 
 from pytorch_util import pytorch_methods, pytorch_DataLoaders
-from pytorch_util.pytorch_DataLoaders import DatasetWrapper
+from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
 from pytorch_util.pytorch_methods import to_torch_to_cuda
 from text_classification.classifiers.common import GenericClassifier
 
@@ -111,7 +111,7 @@ class TfIdfElasticNetPytorchClf(GenericClassifier):
 
 
         dataloader = pytorch_DataLoaders.build_messaging_DataLoader_from_dataset(
-            dataset=DatasetWrapper(getbatch_fun=process_batch_fun),
+            dataset=GetBatchFunDatasetWrapper(getbatch_fun=process_batch_fun),
             collate_fn=lambda x: to_torch_to_cuda(x[0]),
             num_workers=0,
             message_supplier=lambda: mode
