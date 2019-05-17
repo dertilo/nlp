@@ -109,7 +109,7 @@ class AttentionClassifierPytorch(GenericClassifier):
                               self.build_dataloader(X,mode='train',
                                                     batch_size=self.train_config.batch_size),
                               self.train_config.n_epochs,
-                              tol=self.train_config.patience,
+                              tol=self.train_config.tol,
                               patience=self.train_config.patience,
                               verbose=True)
         return self
