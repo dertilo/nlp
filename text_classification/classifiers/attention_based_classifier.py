@@ -20,8 +20,10 @@ class TrainConfig(NamedTuple):
     """ Hyperparameters for training """
     seed: int = 42 # random seed
     batch_size: int = 32
-    lr: int = 2e-5 # learning rate
+    lr: float = 2e-5 # learning rate
     n_epochs: int = 10 # the number of epoch
+    tol:float = 0
+    patience:int = 3
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup: float = 0.1
@@ -60,38 +62,41 @@ class AttentionClassifier(nn.Module):
 class AttentionClassifierPytorch(GenericClassifier):
     def __init__(self,
                  train_config:TrainConfig,
-                 model_cfg: selfatt_enc.BertConfig,
+                 model_config: selfatt_enc.BertConfig,
                  dataprocessor: DataProcessorInterface,
+                 save_dir='./save_dir',
+                 model_file=None,
+                 pretrain_file=None,
+                 data_parallel=True
+
                  ) -> None:
         super().__init__()
-        self.model_cfg = model_cfg
+        self.model_config = model_config
         self.train_config = train_config
         self.dataprocessor =  dataprocessor
         self.device = get_device()
         self.model = None
 
-    def _build_model(self):
-        return AttentionClassifier(self.model_cfg, self.dataprocessor.num_classes)
-
-    def fit(self,X,y=None,
-            save_dir='./save_dir',
-            model_file = None,
-            pretrain_file = None,
-            data_parallel = True
-            ):
         self.save_dir = save_dir
+        self.model_file = model_file
+        self.pretrain_file = pretrain_file
+        self.data_parallel = data_parallel
+
+    def _build_model(self):
+        return AttentionClassifier(self.model_config, self.dataprocessor.num_classes)
+
+    def fit(self,X,y=None):
         self.dataprocessor.fit(X)
 
-        model,loss_fun = self.prepare_model_for_training(data_parallel, model_file, pretrain_file)
+        model,loss_fun = self.prepare_model_for_training(self.data_parallel, self.model_file, self.pretrain_file)
 
-        self.optimizer = optim.optim4GPU(self.train_config, self.model) #TODO(tilo):holyJohn!
-        # if False:
-        #     p_cond = lambda p_name,p: 'bert_encoder' not in p_name and p.requires_grad
-        # else:
-        #     p_cond = lambda p_name,p: p.requires_grad
-        # params = [p for p_name, p in self.model.named_parameters() if p_cond(p_name,p)]
-        #
-        # self.optimizer = torch.optim.RMSprop(params, lr=0.01)
+        # self.optimizer = optim.optim4GPU(self.train_config, self.model) #TODO(tilo):holyJohn!
+        if False:
+            p_cond = lambda p_name,p: 'bert_encoder' not in p_name and p.requires_grad
+        else:
+            p_cond = lambda p_name,p: p.requires_grad
+        params = [p for p_name, p in self.model.named_parameters() if p_cond(p_name,p)]
+        self.optimizer = torch.optim.Adam(params, lr=self.train_config.lr)
 
         def train_on_batch(batch):
             self.optimizer.zero_grad()
@@ -100,8 +105,13 @@ class AttentionClassifierPytorch(GenericClassifier):
             self.optimizer.step()
             return loss.item()
 
-        pytorch_methods.train(train_on_batch, self.build_dataloader(X,mode='train',batch_size=32),
-                              self.train_config.n_epochs,verbose=True)
+        pytorch_methods.train(train_on_batch,
+                              self.build_dataloader(X,mode='train',
+                                                    batch_size=self.train_config.batch_size),
+                              self.train_config.n_epochs,
+                              tol=self.train_config.patience,
+                              patience=self.train_config.patience,
+                              verbose=True)
         return self
 
     def build_dataloader(self,raw_data,mode,batch_size):
