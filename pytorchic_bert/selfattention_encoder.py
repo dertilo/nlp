@@ -16,7 +16,11 @@ from pytorchic_bert.utils import split_last, merge_last
 
 
 class BertConfig(NamedTuple):
-    "Configuration for BERT model"
+    '''
+    Configuration for BERT model"
+    BERT: Bidirectional Encoder Representations from Transformers
+    '''
+
     vocab_size: int = None # Size of Vocabulary
     dim: int = 768 # Dimension of Hidden Layer in Transformer Encoder
     n_layers: int = 12 # Numher of Hidden Layers
@@ -125,6 +129,7 @@ class EncoderLayer(nn.Module):
 
     def __init__(self, cfg:BertConfig):
         super().__init__()
+        assert cfg.dim%cfg.n_heads==0
         self.attn = MultiHeadedSelfAttention(cfg.dim,cfg.n_heads,cfg.p_drop_attn)
         self.proj = nn.Linear(cfg.dim, cfg.dim)
         self.norm1 = LayerNorm(cfg.dim)
@@ -146,9 +151,9 @@ class EncoderStack(nn.Module):
         self.embed = Embeddings(cfg.vocab_size,cfg.dim,cfg.max_len,cfg.n_segments,cfg.p_drop_hidden)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg.n_layers)])
 
-    def forward(self, x, seg, mask):
-        h = self.embed(x, seg)
+    def forward(self, input_ids, segment_ids, input_mask):
+        h = self.embed(input_ids, segment_ids)
         for layer in self.layers:
-            h = layer(h, mask)
+            h = layer(h, input_mask)
         return h
 
