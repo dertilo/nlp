@@ -48,34 +48,35 @@ class TwoSentDataProcessor(DataProcessorInterface):
 
     def build_get_batch_fun(self,raw_data,batch_size):
 
-        tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*self.transform(raw_data))]
-
-        def build_idx_batch_generator(batch_size):
+        def build_batch_generator(batch_size):
             # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
             # idx = torch.randperm(self.tensors[0].shape[0])
-            idx = range(tensors[0].shape[0])
-            return iterable_to_batches(iter(idx), batch_size)
+            return iterable_to_batches(raw_data, batch_size)
 
-        batch_indizes_g =[0]
-        batch_indizes_g[0] = build_idx_batch_generator(batch_size)
+        batch_g =[0]
+        batch_g[0] = build_batch_generator(batch_size)
 
         def get_batch(message):
             try:
-                batch = next(batch_indizes_g[0])
+                batch = next(batch_g[0])
             except StopIteration:
                 # self.tensors = [tensor[torch.randperm(tensor.shape[0])] for tensor in self.tensors]
-                batch_indizes_g[0] = build_idx_batch_generator(batch_size)
+                batch_g[0] = build_batch_generator(batch_size)
                 raise StopIteration
 
-            out = {'input_ids':tensors[0][batch],
-                   'segment_ids':tensors[1][batch],
-                   'input_mask':tensors[2][batch]
-                   }
+            tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*self.transform(batch))]
+
+            out = {
+                'raw_batch':batch,
+                'input_ids':tensors[0],
+                'segment_ids':tensors[1],
+                'input_mask':tensors[2]
+            }
 
             if message == 'eval':
                 pass
             elif message == 'train':
-                out['target'] = tensors[3][batch]
+                out['target'] = tensors[3]
             else:
                 assert False
             return out
@@ -129,7 +130,7 @@ if __name__ == '__main__':
     home = str(Path.home())
     train_data, test_data = load_data()
 
-    cfg = TrainConfig(seed=42,n_epochs=1)#.from_json('pytorchic_bert/config/train_mrpc.json')
+    cfg = TrainConfig(seed=42,n_epochs=6,lr=0.001)#.from_json('pytorchic_bert/config/train_mrpc.json')
     model_cfg = selfatt_enc.BertConfig.from_json('pytorchic_bert/config/bert_base.json')
     max_len = 128
 
@@ -137,11 +138,12 @@ if __name__ == '__main__':
 
     vocab = home+'/data/models/uncased_L-12_H-768_A-12/vocab.txt'
     dp = TwoSentDataProcessor(vocab_file=vocab, max_len=max_len)
-    pipeline = AttentionClassifierPytorch(cfg, model_cfg,dp)
+
     pretrain_file = home + '/data/models/uncased_L-12_H-768_A-12/bert_encoder_pytorch.pt'
     # pretrain_file = None
+    pipeline = AttentionClassifierPytorch(cfg, model_cfg,dp,pretrain_file=pretrain_file)
     save_path = home + '/nlp/saved_models'
-    pipeline.fit(train_data, pretrain_file=pretrain_file)
+    pipeline.fit(train_data)
     pipeline.save(save_path)
     del pipeline
 
