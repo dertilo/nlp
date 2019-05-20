@@ -82,7 +82,7 @@ def to_cuda(x,device=None):
         else:
             return x
     else:
-        return x.to(device) if USE_CUDA else x
+        return x.to(device) if USE_CUDA and isinstance(x,torch.Tensor) else x
 
 def predict_with_softmax(pytorch_nn_model:nn.Module, batch_iterable:Iterable[Dict[str,Variable]]):
     pytorch_nn_model.eval()
