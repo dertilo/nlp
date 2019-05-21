@@ -1,8 +1,7 @@
-from commons.util_methods import iterable_to_batches
+import re
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
-from torch.utils.data import Dataset
-import re
 
 
 def identity_dummy_method(x):
@@ -20,30 +19,15 @@ def regex_tokenizer(text, pattern=r"(?u)\b\w\w+\b"):# pattern stolen from scikit
 def text_to_bow(text):
     return regex_tokenizer(text)
 
-def windowed_bow(data):
-    raw_bows = [text_to_bow(d['utterance'])+['SPEAKER__'+d['speaker']] for d in data]
-
-    def window_prefixed_bows(idx,before=-8,after=2):
-        return [str(i)+'__'+tok
-                for i in range(before,after)
-                if idx+i<len(data) and idx+i>=0
-                if data[idx+i]['debatefile']==data[idx]['debatefile']
-                for tok in raw_bows[idx+i]]
-
-    prefixed_bows = [window_prefixed_bows(idx) for idx in range(len(data))]
-    return prefixed_bows
-
-def raw_bow(texts):
-    raw_bows = [text_to_bow(text) for text in texts]
-    return raw_bows
-
 class TfIdfTextClfDataProcessor(object):
 
     def __init__(self,
-                 text_to_bow_fun,
+                 process_data_to_bows_fun,
+                 get_targets_fun
                  ) -> None:
         super().__init__()
-        self.text_to_bow_fun=text_to_bow_fun
+        self.get_targets_fun = get_targets_fun
+        self.process_data_to_bows_fun=process_data_to_bows_fun
         self.target_binarizer = MultiLabelBinarizer()
 
         self.vectorizer = TfidfVectorizer(sublinear_tf=True,
@@ -56,17 +40,17 @@ class TfIdfTextClfDataProcessor(object):
                                      )
     def fit(self,data):
 
-        self.vectorizer.fit(self.text_to_bow_fun([d['text'] for d in data]))
-        self.target_binarizer.fit([d['labels'] for d in data])
+        self.vectorizer.fit(self.process_data_to_bows_fun(data))
+        self.target_binarizer.fit([self.get_targets_fun(d) for d in data])
 
 
     def process_inputs_and_targets(self,data):
         inputs = self.process_inputs(data)
-        targets = self.target_binarizer.transform([d['labels'] for d in data]).astype('float32')
+        targets = self.target_binarizer.transform([self.get_targets_fun(d) for d in data]).astype('float32')
         return inputs,targets
 
     def process_inputs(self, data):
-        bow = self.text_to_bow_fun([d['text'] for d in data])
+        bow = self.process_data_to_bows_fun(data)
         csr = self.vectorizer.transform(bow)
         return csr
 

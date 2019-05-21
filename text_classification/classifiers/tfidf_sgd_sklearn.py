@@ -1,23 +1,17 @@
-from collections import Counter
-from pprint import pprint
-from typing import Dict
 import numpy as np
-from sklearn.base import TransformerMixin, BaseEstimator
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
-from sklearn.model_selection import ShuffleSplit, StratifiedShuffleSplit, GroupShuffleSplit
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder, Binarizer, MultiLabelBinarizer
 
 from text_classification.classifiers.common import GenericClassifier
 from text_classification.classifiers.tfidf_dataprocessor import TfIdfTextClfDataProcessor
 
 
 class TfIdfSGDSklearnClf(GenericClassifier):
-    def __init__(self, text_to_bow_fun, alpha = 0.00001) -> None:
+    def __init__(self, process_data_to_bows_fun, alpha = 0.00001,
+                 get_targets_fun=None
+                 ) -> None:
         super().__init__()
-        self.text_to_bow_fun = text_to_bow_fun
-        self.dataprocessor = TfIdfTextClfDataProcessor(text_to_bow_fun)
+        get_targets_fun = lambda x:x['labels'] if get_targets_fun is None else get_targets_fun
+        self.dataprocessor = TfIdfTextClfDataProcessor(process_data_to_bows_fun,get_targets_fun=get_targets_fun)
         self.clf = SGDClassifier(alpha=alpha, loss='log', penalty="elasticnet", l1_ratio=0.2, tol=1e-3)
 
     def fit(self,X,y=None):
