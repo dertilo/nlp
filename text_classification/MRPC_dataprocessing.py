@@ -64,7 +64,7 @@ class TwoSentDataProcessor(DataProcessorInterface):
                 batch_g[0] = build_batch_generator(batch_size)
                 raise StopIteration
 
-            tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*self.transform(batch))]
+            tensors = [torch.tensor(x, dtype=torch.long).cpu() for x in zip(*self.transform(batch))]
 
             out = {
                 'raw_batch':batch,

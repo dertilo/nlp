@@ -60,7 +60,7 @@ class AddSpecialTokensWithTruncation(CallableInterface):
         return (label, tokens_a, tokens_b)
 
 
-class TokenIndexing(CallableInterface): #TODO(tilo): this one also does encoding of target-labels!
+class TwoSentTokenIndexing(CallableInterface): #TODO(tilo): this one also does encoding of target-labels!
     """ Convert tokens into token indexes and do zero-padding """
     def __init__(self, indexer, labels, max_len=512):
         super().__init__()
