@@ -88,7 +88,7 @@ class MultiHeadedSelfAttention(nn.Module):
         self.scores = None # for visualization
         self.n_heads = n_heads
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None):
         """
         x, q(query), k(key), v(value) : (B(batch_size), S(seq_len), D(dim))
         mask : (B(batch_size) x S(seq_len))
@@ -127,17 +127,17 @@ class PositionWiseFeedForward(nn.Module):
 
 class EncoderLayer(nn.Module):
 
-    def __init__(self, cfg:BertConfig):
+    def __init__(self, dim,n_heads,dim_ff,p_drop_attn=0.1,p_drop_hidden=0.1):
         super().__init__()
-        assert cfg.dim%cfg.n_heads==0
-        self.attn = MultiHeadedSelfAttention(cfg.dim,cfg.n_heads,cfg.p_drop_attn)
-        self.proj = nn.Linear(cfg.dim, cfg.dim)
-        self.norm1 = LayerNorm(cfg.dim)
-        self.pwff = PositionWiseFeedForward(cfg.dim,cfg.dim_ff)
-        self.norm2 = LayerNorm(cfg.dim)
-        self.drop = nn.Dropout(cfg.p_drop_hidden)
+        assert dim%n_heads==0
+        self.attn = MultiHeadedSelfAttention(dim,n_heads,p_drop_attn)
+        self.proj = nn.Linear(dim, dim)
+        self.norm1 = LayerNorm(dim)
+        self.pwff = PositionWiseFeedForward(dim,dim_ff)
+        self.norm2 = LayerNorm(dim)
+        self.drop = nn.Dropout(p_drop_hidden)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask=None):
         h = self.attn(x, mask)
         h = self.norm1(x + self.drop(self.proj(h)))
         h = self.norm2(h + self.drop(self.pwff(h)))
@@ -149,7 +149,7 @@ class EncoderStack(nn.Module):
     def __init__(self, cfg:BertConfig):
         super().__init__()
         self.embed = Embeddings(cfg.vocab_size,cfg.dim,cfg.max_len,cfg.n_segments,cfg.p_drop_hidden)
-        self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg.n_layers)])
+        self.layers = nn.ModuleList([EncoderLayer(cfg.dim,cfg.n_heads,cfg.dim_ff,cfg.p_drop_attn,cfg.p_drop_hidden) for _ in range(cfg.n_layers)])
 
     def forward(self, input_ids, segment_ids, input_mask):
         h = self.embed(input_ids, segment_ids)
