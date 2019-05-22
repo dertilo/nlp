@@ -10,6 +10,7 @@ from pytorch_util import pytorch_methods
 from pytorch_util.multiprocessing_proved_dataloading import build_messaging_DataLoader_from_dataset_builder
 from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
 from pytorch_util.pytorch_methods import get_device, to_torch_to_cuda
+from pytorchic_bert.selfattention_encoder import EncoderLayer
 from text_classification.classifiers.common import GenericClassifier, DataProcessorInterface
 
 
@@ -27,19 +28,20 @@ class Classifier(nn.Module):
 
     def __init__(self, embedding_size, n_labels):
         super().__init__()
-        # self.classifier = selfatt_enc.EncoderLayer(dim=8,dim_ff=4*8,n_heads=2)
-        self.conv = nn.Conv2d(in_channels=1,
+        # self.encoder = EncoderLayer(dim=embedding_size,dim_ff=4*embedding_size,n_heads=2)
+        self.conv = nn.Conv2d(in_channels=embedding_size,
                               out_channels=32,
-                              kernel_size=(1, 768),
+                              kernel_size=(1, 1),
                               padding=0)
-        self.pooling = nn.AdaptiveAvgPool1d(1)
-        self.classifier = nn.Linear(32, n_labels)
+        self.pooling = nn.AdaptiveAvgPool2d((10,1))
+        self.classifier = nn.Linear(320, n_labels)
 
     def forward(self,embedding):
-        x = self.conv(embedding.unsqueeze(1))
-        x = x.squeeze()
+        x = self.conv(embedding.permute(0,3,1,2))
         x = self.pooling(x).squeeze()
-        logits = self.classifier(x)
+        # flattened_seqs = embedding.view(embedding.size(0)*embedding.size(1),embedding.size(2),embedding.size(3))
+        # encoded = self.encoder(flattened_seqs)
+        logits = self.classifier(x.view(x.size(0),32*10))
         return logits
 
     @staticmethod
@@ -60,30 +62,46 @@ class EmbeddedDataProcessor(DataProcessorInterface):
         self.target_binarizer.fit([d['labels'] for d in data])
         self.classes = self.target_binarizer.classes_.tolist()
         self.embedding_size = data[0]['embedding'].shape[1]
+        self.max_seqlen = data[0]['embedding'].shape[0]
 
     def build_get_batch_fun(self,raw_data,batch_size):
+        utterances_tensor = torch.cat([d.get('embedding').unsqueeze(0) for d in raw_data],dim=0)
+
+        def get_seqs_in_window(idx, before=-8, after=2):
+            ids = [idx + i
+                    for i in range(before, after)
+                    if idx + i < len(raw_data) and idx + i >= 0 and raw_data[idx + i]['debatefile'] == raw_data[idx]['debatefile']]
+
+            padding = torch.zeros((after-before-len(ids),self.max_seqlen,self.embedding_size))
+            seqs = utterances_tensor.index_select(0,torch.LongTensor(ids))
+            # seqs = torch.cat([raw_data[i]['embedding'].unsqueeze(0) for i in ids])
+            return torch.cat((padding,seqs))
+
+        dialogs = torch.cat([get_seqs_in_window(idx, -8, 2).unsqueeze(0) for idx in range(len(raw_data))],dim=0) # this needs lot of memory!
+        del utterances_tensor
 
         def build_batch_generator(batch_size):
-            return iterable_to_batches(raw_data, batch_size)
+            return iterable_to_batches(iter(range(len(raw_data))), batch_size)
 
         batch_g =[0]
         batch_g[0] = build_batch_generator(batch_size)
 
         def get_batch(message):
             try:
-                batch = next(batch_g[0])
+                batch_idx = next(batch_g[0])
             except StopIteration:
                 batch_g[0] = build_batch_generator(batch_size)
                 raise StopIteration
 
             out = {
-                'embedding':torch.cat([d['embedding'].unsqueeze(0) for d in batch],dim=0),
+                # 'embedding':torch.cat([get_seqs_in_window(idx,-8,2).unsqueeze(0) for idx in batch_idx]),
+                'embedding':dialogs.index_select(0,torch.LongTensor(batch_idx)),
             }
 
             if message == 'eval':
                 pass
             elif message == 'train':
-                out['target'] = torch.tensor([self.classes.index(d['labels'][0]) for d in batch], dtype=torch.long)
+                out['target'] = torch.tensor([self.classes.index(raw_data[idx]['labels'][0]) for idx in batch_idx], dtype=torch.long)
             else:
                 assert False
             return out
