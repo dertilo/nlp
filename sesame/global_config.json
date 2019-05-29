@@ -1,0 +1,7 @@
+{
+    "version": 1.7,
+    "data_directory": "sesame/data/",
+    "embeddings_file": "/home/tilo/data/embeddings/glove_6B/glove.6B.100d.txt",
+    "debug_mode": false
+}
+
