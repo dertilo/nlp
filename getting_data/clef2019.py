@@ -14,7 +14,7 @@ def parse_line(filename, line):
         'line_id':line_id,
         'speaker':speaker,
         'utterance':utterance,
-        'label': label
+        'label': label.replace('\r','')
     }
 
 def get_Clef2019_data(data_path):
