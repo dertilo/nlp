@@ -4,14 +4,9 @@ sys.path.append('.')
 from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
 from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
-from text_classification.attention_classifier_MRPC import TwoSentDataProcessor
 
 
-from model_evaluation.classification_metrics import calc_classification_metrics
 import time
-from collections import Counter
-from pprint import pprint
-
 import torch
 from commons import data_io, util_methods
 from torch import nn as nn
@@ -84,37 +79,39 @@ class BertEmbedder(object):
         for k, batches in enumerate(util_methods.iterable_to_batches(transformed_g, dump_batch_size // batch_size)):
             dump_it(k,batches)
 
+def load_embedded_data(path:str):
+    raw_data = data_io.read_jsons_from_file(path + '/' + 'raw_batch_0.jsonl')
+    tensor = torch.load(path+'/processed_batch_0.pt')
+    print(tensor.shape)
+    def add_key_value(d,k,v):
+        d[k]=v
+        return d
+    return [(add_key_value(d,'embedding',tensor[k])) for k,d in enumerate(raw_data)]
 
 if __name__ == '__main__':
     import numpy as np
+    from getting_data.clef2019 import get_Clef2019_data
+    from getting_data.glue_MRPC import get_MRPC_data
+    from text_classification.MRPC_dataprocessing import TwoSentDataProcessor
 
-    def get_data(file):
-        def parse_line(line):
-            label, id1, id2, texta, textb = line.split('\t')
-            return {
-                'text': texta,
-                'textb': textb,
-                'labels': label}
+    # def load_data():
+    #     train_data = get_MRPC_data(home + '/data/glue/MRPC/train.tsv')
+    #     label_counter = Counter([l for d in train_data for l in d['labels']])
+    #     pprint(label_counter)
+    #     test_data = get_MRPC_data(home + '/data/glue/MRPC/dev.tsv')
+    #     label_counter = Counter([l for d in test_data for l in d['labels']])
+    #     print(label_counter)
+    #     return train_data, test_data
 
-        lines_g = data_io.read_lines(file)
-        next(lines_g)
-        data = [parse_line(line) for line in lines_g]
-        return data
-
-    def load_data():
-        train_data = get_data(home + '/data/glue/MRPC/train.tsv')
-        label_counter = Counter([l for d in train_data for l in d['labels']])
-        pprint(label_counter)
-        test_data = get_data(home + '/data/glue/MRPC/dev.tsv')
-        label_counter = Counter([l for d in test_data for l in d['labels']])
-        print(label_counter)
-        return train_data, test_data
 
     start = time.time()
     from pathlib import Path
     home = str(Path.home())
-    train_data, test_data = load_data()
-
+    # train_data, test_data = load_data()
+    # data = get_Clef2019_data(home+'/code/misc/clef2019-factchecking-task1/data/training')
+    # data = get_Clef2019_data(home+'/clef2019-factchecking-task1/data/training')
+    data = get_Clef2019_data(home+'/clef2019-factchecking-task1/data/test_annotated')
+    [d.update({'text':d['utterance'],'textb':'','labels':[d['label']]}) for d in data]
     model_cfg = selfatt_enc.BertConfig.from_json('pytorchic_bert/config/bert_base.json')
     max_len = 128
 
@@ -129,5 +126,5 @@ if __name__ == '__main__':
     pretrain_file = home + '/data/models/uncased_L-12_H-768_A-12/bert_encoder_pytorch.pt'
     # pretrain_file = None
     bertembedder = BertEmbedder(model_cfg,dp,pretrain_file)
-    bertembedder.transform_dump(train_data,path='./processed',batch_size=32,dump_batch_size=4096)
+    bertembedder.transform_dump(data,path='./processed_testdata',batch_size=32,dump_batch_size=114096)
     # pbatch = next(bertembedder.transform(train_data))
