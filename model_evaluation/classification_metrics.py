@@ -28,7 +28,9 @@ def calc_classification_metrics(proba, pred, target, target_names):
         'PR-AUC-micro': ttc(partial(average_precision_score, average='micro'), target, proba),
         'f1-macro': metrics.f1_score(target, pred, average='macro'),
         'f1-micro': metrics.f1_score(target, pred, average='micro'),
-        # 'accuracy': metrics.accuracy_score(y_target,y_pred) # same as f1-micro for single-label classification
+        'clf-report':metrics.classification_report(y_true=target, y_pred=pred, target_names=target_names, digits=3,
+                                              output_dict=True),
+        'accuracy': metrics.accuracy_score(target,pred) # same as f1-micro for single-label classification
     }
 
 def calc_labelwise_scores(proba, pred, target, target_names):
