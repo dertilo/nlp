@@ -12,7 +12,7 @@ from pytorch_util.pytorch_DataLoaders import GetBatchFunDatasetWrapper
 from pytorch_util.pytorch_methods import get_device, to_torch_to_cuda
 from pytorchic_bert.selfattention_encoder import EncoderLayer
 from text_classification.classifiers.common import GenericClassifier, DataProcessorInterface
-
+import torch.nn.functional as F
 
 class TrainConfig(NamedTuple):
 
@@ -29,19 +29,25 @@ class Classifier(nn.Module):
     def __init__(self, embedding_size, n_labels):
         super().__init__()
         # self.encoder = EncoderLayer(dim=embedding_size,dim_ff=4*embedding_size,n_heads=2)
-        self.conv = nn.Conv2d(in_channels=embedding_size,
-                              out_channels=32,
-                              kernel_size=(1, 1),
-                              padding=0)
-        self.pooling = nn.AdaptiveAvgPool2d((10,1))
-        self.classifier = nn.Linear(320, n_labels)
+        # self.conv = nn.Conv2d(in_channels=embedding_size,
+        #                       out_channels=32,
+        #                       kernel_size=(1, 1),
+        #                       padding=0)
+        # # self.pooling = nn.AdaptiveAvgPool2d((10,1))
+        # self.pooling = nn.AdaptiveMaxPool2d((10,1))
+        self.classifier = nn.Linear(embedding_size*2, n_labels)
 
     def forward(self,embedding):
-        x = self.conv(embedding.permute(0,3,1,2))
-        x = self.pooling(x).squeeze()
+        # emb = embedding.permute(0, 3, 1, 2)
+        # emb = F.dropout(emb,p=0.5)
+        # x = self.conv(emb)
+        # x = self.pooling(x).squeeze()
         # flattened_seqs = embedding.view(embedding.size(0)*embedding.size(1),embedding.size(2),embedding.size(3))
         # encoded = self.encoder(flattened_seqs)
-        logits = self.classifier(x.view(x.size(0),32*10))
+        # logits = self.classifier(x.view(x.size(0),32*10))
+        x = embedding[:,:,0].squeeze().contiguous()
+        x = F.dropout(x,p=0.1)
+        logits = self.classifier(x.view(x.size(0),x.size(2)*x.size(1)))
         return logits
 
     @staticmethod
@@ -77,7 +83,7 @@ class EmbeddedDataProcessor(DataProcessorInterface):
             # seqs = torch.cat([raw_data[i]['embedding'].unsqueeze(0) for i in ids])
             return torch.cat((padding,seqs))
 
-        dialogs = torch.cat([get_seqs_in_window(idx, -8, 2).unsqueeze(0) for idx in range(len(raw_data))],dim=0) # this needs lot of memory!
+        dialogs = torch.cat([get_seqs_in_window(idx, -1, 1).unsqueeze(0) for idx in range(len(raw_data))],dim=0) # this needs lot of memory!
         del utterances_tensor
 
         def build_batch_generator(batch_size):

@@ -91,12 +91,12 @@ class AttentionClassifierPytorch(GenericClassifier):
         model,loss_fun = self.prepare_model_for_training(self.data_parallel, self.model_file, self.pretrain_file)
 
         # self.optimizer = optim.optim4GPU(self.train_config, self.model) #TODO(tilo):holyJohn!
-        if False:
+        if True:
             p_cond = lambda p_name,p: 'bert_encoder' not in p_name and p.requires_grad
         else:
             p_cond = lambda p_name,p: p.requires_grad
-        params = [p for p_name, p in self.model.named_parameters() if p_cond(p_name,p)]
-        self.optimizer = torch.optim.Adam(params, lr=self.train_config.lr)
+        names_params = [(p_name,p) for p_name, p in self.model.named_parameters() if p_cond(p_name,p)]
+        self.optimizer = torch.optim.Adam([p for _,p in names_params], lr=self.train_config.lr)
 
         def train_on_batch(batch):
             self.optimizer.zero_grad()

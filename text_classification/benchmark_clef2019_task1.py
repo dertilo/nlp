@@ -23,7 +23,7 @@ from text_classification.classifiers.tfidf_sgd_sklearn import TfIdfSGDSklearnClf
 def rank_it(scores):
     return [r for r, score in sorted(enumerate(scores), key=lambda x: x[1], reverse=True)]
 
-def benchmark(build_pipeline_fun,parameters,data):
+def benchmark(build_pipeline_fun,parameters,data,test_data=None):
 
     def score_fun(train_data, test_data):
         pipeline:GenericClassifier = build_pipeline_fun(**parameters)
@@ -43,16 +43,15 @@ def benchmark(build_pipeline_fun,parameters,data):
             'test-avgP': avgP_test,
         }
 
+    if test_data is None:
+        # splitter = ShuffleSplit(n_splits=5, test_size=0.2, random_state=111)
+        splitter = GroupShuffleSplit(n_splits=4, test_size=0.2, random_state=111)
+        splits = [(train, test) for train, test in
+                  splitter.split(X=range(len(data)), groups=[d['debatefile'] for d in data])]
+    else:
+        splits = [(list(range(len(data))),list(range(len(data),len(data)+len(test_data))))]
+        data = data+test_data
 
-    # splitter = ShuffleSplit(n_splits=5, test_size=0.2, random_state=111)
-    splitter = GroupShuffleSplit(n_splits=4, test_size=0.2, random_state=111)
-    splits = [(train, test) for train, test in
-              splitter.split(X=range(len(data)), groups=[d['debatefile'] for d in data])]
-    # test_file = '20190108_oval_office.tsv'
-    # splits = [(
-    #     np.array([i for i,d in enumerate(clef2019_data) if d['debatefile']!=test_file]),
-    #     np.array([i for i,d in enumerate(clef2019_data) if d['debatefile']==test_file])
-    #            )]
     m_scores_std_scores = calc_mean_std_scores(data, score_fun, splits)
     print(parameters)
     pprint(m_scores_std_scores['m_scores'])
@@ -80,11 +79,17 @@ if __name__ == '__main__':
     from pathlib import Path
     home = str(Path.home())
     data = load_embedded_data(home+'/nlp/processed')
+    [d.__setitem__('embedding',d['embedding'][0,:].unsqueeze(0)) for d in data]
+    test_data = load_embedded_data(home+'/nlp/processed_testdata')
+    [d.__setitem__('embedding',d['embedding'][0,:].unsqueeze(0)) for d in test_data]
+
     # data = load_embedded_data('/tmp/processed')
     # data = get_Clef2019_data(home+'/code/misc/clef2019-factchecking-task1/data/training')
+    # test_data = get_Clef2019_data(home+'/code/misc/clef2019-factchecking-task1/data/test_annotated')
     pprint(Counter([d['label'] for d in data]))
+    pprint(Counter([d['label'] for d in test_data]))
 
-    # benchmark(TfIdfSGDSklearnClf,{'process_data_to_bows_fun':windowed_bow,'alpha':0.00002,'get_targets_fun':lambda x:[x['label']]},data)
-    # benchmark(TfIdfSGDSklearnClf,{'process_data_to_bows_fun':raw_bow,'alpha':0.00002,'get_targets_fun':lambda x:[x['label']]},data)
-    benchmark(EmbeddingClassifier,parameters={'train_config':embedding_classifier.TrainConfig(n_epochs=19,lr=0.01)},data=data)
+    benchmark(TfIdfSGDSklearnClf,{'process_data_to_bows_fun':raw_bow,'alpha':0.00002,'get_targets_fun':lambda x:[x['label']]},data,test_data)
+    # benchmark(TfIdfSGDSklearnClf,{'process_data_to_bows_fun':windowed_bow,'alpha':0.000005,'get_targets_fun':lambda x:[x['label']]},data,test_data)
+    benchmark(EmbeddingClassifier,{'train_config':embedding_classifier.TrainConfig(n_epochs=19 ,lr=0.002)},data,test_data)
 

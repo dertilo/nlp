@@ -6,7 +6,7 @@ import numpy as np
 
 def get_20newsgroups_data(train_test,
                           categories=None,
-                          truncate_to:int=None,
+                          max_text_len:int=None,
                           min_num_tokens=0,
                           random_state=42)->List[Tuple[str,str]]:
     """
@@ -41,9 +41,9 @@ def get_20newsgroups_data(train_test,
 
 
     data = [(d, target_names[target]) for d, target in zip(data.data, data.target) if len(d.split(' ')) > min_num_tokens]
-    if truncate_to is not None:
+    if max_text_len is not None:
         def truncate(text):
-            return text[0:min(len(text), truncate_to)]
+            return text[0:min(len(text), max_text_len)]
         data = [(truncate(d),t) for d,t in data]
     return data
 
