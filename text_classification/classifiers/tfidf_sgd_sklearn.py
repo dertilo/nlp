@@ -10,7 +10,6 @@ class TfIdfSGDSklearnClf(GenericClassifier):
                  get_targets_fun=None
                  ) -> None:
         super().__init__()
-        get_targets_fun = lambda x:x['labels'] if get_targets_fun is None else get_targets_fun
         self.dataprocessor = TfIdfTextClfDataProcessor(process_data_to_bows_fun,get_targets_fun=get_targets_fun)
         self.clf = SGDClassifier(alpha=alpha, loss='log', penalty="elasticnet", l1_ratio=0.2, tol=1e-3)
 

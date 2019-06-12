@@ -26,6 +26,9 @@ class TfIdfTextClfDataProcessor(object):
                  get_targets_fun
                  ) -> None:
         super().__init__()
+        if get_targets_fun is None:
+            get_targets_fun = lambda x:x['labels']
+
         self.get_targets_fun = get_targets_fun
         self.process_data_to_bows_fun=process_data_to_bows_fun
         self.target_binarizer = MultiLabelBinarizer()
