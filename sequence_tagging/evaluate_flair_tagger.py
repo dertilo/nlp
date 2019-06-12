@@ -1,12 +1,12 @@
-from pathlib import Path
 from typing import List
 
 import torch
-from flair.data_fetcher import NLPTaskDataFetcher, NLPTask
 from flair.data import TaggedCorpus, Sentence, Token
-from flair.embeddings import TokenEmbeddings, WordEmbeddings, StackedEmbeddings, CharLMEmbeddings, CharacterEmbeddings
-from flair.training_utils import EvaluationMetric, Metric, clear_embeddings
+from flair.data_fetcher import NLPTaskDataFetcher, NLPTask
+from flair.embeddings import TokenEmbeddings, WordEmbeddings, StackedEmbeddings
+from flair.training_utils import clear_embeddings
 from sklearn import metrics
+
 
 def _evaluate_sequence_tagger(model,
                               sentences: List[Sentence],
@@ -59,25 +59,29 @@ def calc_seqtag_eval_scores(gold_seqs, pred_seqs):
     return scores
 
 
-corpus: TaggedCorpus = NLPTaskDataFetcher.load_corpus(NLPTask.UD_ENGLISH)
-print(corpus)
 
-tag_type = 'pos'
+if __name__ == '__main__':
+    from pathlib import Path
+    home = str(Path.home())
 
-tag_dictionary = corpus.make_tag_dictionary(tag_type=tag_type)
-print(tag_dictionary.idx2item)
+    corpus: TaggedCorpus = NLPTaskDataFetcher.load_corpus(NLPTask.UD_ENGLISH)
+    print(corpus)
 
-embedding_types: List[TokenEmbeddings] = [
-    WordEmbeddings('glove'),
-]
+    tag_type = 'pos'
 
-embeddings: StackedEmbeddings = StackedEmbeddings(embeddings=embedding_types)
+    tag_dictionary = corpus.make_tag_dictionary(tag_type=tag_type)
+    print(tag_dictionary.idx2item)
 
-from flair.models import SequenceTagger
-tagger = SequenceTagger = SequenceTagger.load_from_file('/home/tilo/code/NLP/nlp/sequence_tagging/resources/taggers/example-ner/final-model.pt')
+    embedding_types: List[TokenEmbeddings] = [
+        WordEmbeddings('glove'),
+    ]
 
-from flair.trainers import ModelTrainer
-trainer: ModelTrainer = ModelTrainer(tagger, corpus)
+    embeddings: StackedEmbeddings = StackedEmbeddings(embeddings=embedding_types)
 
-metric2, eval_loss = _evaluate_sequence_tagger(tagger,trainer.corpus.test)
-print(metric2)
+    from flair.models import SequenceTagger
+
+    tagger = SequenceTagger = SequenceTagger.load_from_file(
+        'sequence_tagging/resources/taggers/example-ner/final-model.pt')
+
+    metric2, eval_loss = _evaluate_sequence_tagger(tagger, corpus.test)
+    print(metric2)
