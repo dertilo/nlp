@@ -1,0 +1,48 @@
+version: '3.5'
+services:
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: whocares
+    volumes:
+      - /home/tilo/data/postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+#    restart: unless-stopped
+    networks:
+      - 'data-backend'
+
+  pgadmin:
+    links:
+      - postgres:postgres
+    image: fenglc/pgadmin4
+    volumes:
+      - pgadmin_volume:/root/.pgadmin
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+    networks:
+      - 'data-backend'
+
+#  trainer_predictor:
+#    build:
+#      context: ../
+#      dockerfile: industry_sectors_clf_trainer_predictor/Dockerfile
+#    environment:
+#      - POSTGRES_URL=postgres:whocares@postgres:5432/postgres
+#      - JOBLIB_TEMP_FOLDER=/tmp/
+#      - SCORED_TABLE_NAME=scores
+#
+#    command: 'bash -c "git clone git@git.implisense.com:gold-data/industry-sectors.git &&
+#    python industry_sectors_clf_trainer_predictor/run_all.py"'
+#
+#    networks:
+#      - 'data-backend'
+
+networks:
+  data-backend:
+    driver: bridge
+
+volumes:
+  pgadmin_volume:
