@@ -1,1 +1,1 @@
-arxivscraper@git+https://git@gitlab.tubit.tu-berlin.de/NLP/arxivscraper.git#egg=arxivscraper
+arxiv

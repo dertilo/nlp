@@ -42,8 +42,8 @@ def is_existent(d,files,k):
 
 if __name__ == '__main__':
     from pathlib import Path
-    # home = str(Path.home())
-    home = '/media/gdrive'
+    home = str(Path.home())
+    # home = '/media/gdrive'
     # logger = arxiv.logger
     logging.basicConfig(filename='arxiv_downloader.log',
                                        filemode='a',
@@ -55,11 +55,11 @@ if __name__ == '__main__':
     # fh = logging.FileHandler('arxiv_downloader.log')
     # fh.setLevel(logging.DEBUG)
     # logger.addHandler(fh)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     # fh.setFormatter(formatter)
 
-    result = arxiv.query(query="machine learning natural language processing unsupervised", id_list=[], max_results=1000_000, sort_by="relevance",
-                        sort_order="descending", prune=True, iterative=True, max_chunk_results=1500)
+    result = arxiv.query(query="machine learning natural language processing", id_list=[], max_results=1000_000, sort_by="relevance",
+                        sort_order="descending", prune=True, iterative=True, max_chunk_results=100)
     # arxiv.logger.handlers[0].flush()
     download_path=home+'/data/arxiv_papers/ml_nlp'
     if not os.path.isdir(download_path):
@@ -68,9 +68,10 @@ if __name__ == '__main__':
     files = os.listdir(download_path)
     print('already got %d files'%len(files))
 
-    with multiprocessing.Pool(processes=16) as pool:
-        g = (d for d in result() if has_pdf_url(d))
-        g = (d for k,d in enumerate(g) if not is_existent(d,files,k))
-        g = (d for d in pool.imap_unordered(func=partial(download, dirpath=download_path), iterable=g) if d is not None)
-        for k,file in enumerate(g):
-            sys.stdout.write('\r%d'%k)
+    # with multiprocessing.Pool(processes=16) as pool:
+    g = (d for d in result() if has_pdf_url(d))
+    g = (d for k,d in enumerate(g) if not is_existent(d,files,k))
+    # g = (d for d in pool.imap_unordered(func=partial(download, dirpath=download_path), iterable=g) if d is not None)
+    g = (download(d,download_path) for d in g if d is not None)
+    for k,file in enumerate(g):
+        sys.stdout.write('\r%d'%k)
