@@ -83,13 +83,15 @@ def insert_or_overwrite(conn, table:Table, rows:List[Dict]):
                      [{**{'obj_id': eid},**{'val_'+c:ids2values[eid][c] for c in column_names} } for eid in
                       ids_to_overwrite])
 
-def insert_if_not_existing(conn, table:Table, rows:List[Dict]):
-    ids = set([d['id'] for d in rows])
-    existing_ids = set([d['id'] for d in conn.execute(select([table]).where(table.c.id.in_(ids)))])
-    ids_to_insert = set([eid for eid in ids if eid not in existing_ids])
+def insert_if_not_existing(conn, table:Table, data:Iterable, batch_size=10000):
+    def insert_batch(rows):
+        ids = set([d['id'] for d in rows])
+        existing_ids = set([d['id'] for d in conn.execute(select([table]).where(table.c.id.in_(ids)))])
+        ids_to_insert = set([eid for eid in ids if eid not in existing_ids])
+        if len(ids_to_insert) > 0:
+            conn.execute(table.insert(), [d for d in rows if d['id'] in ids_to_insert])
 
-    if len(ids_to_insert)>0:
-        conn.execute(table.insert(), [d for d in rows if d['id'] in ids_to_insert])
+    util_methods.consume_batchwise(insert_batch, data, batch_size)
 
 def fetcher_queue_filler(queue:multiprocessing.Queue,
                          query:Query,
