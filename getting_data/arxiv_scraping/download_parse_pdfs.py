@@ -1,5 +1,6 @@
 import sys
 from io import StringIO
+from time import sleep, time
 
 from commons import data_io
 
@@ -7,7 +8,7 @@ sys.path.append('.')
 import json
 import os
 
-from arxiv import slugify
+from arxiv import slugify, urlretrieve
 from sqlalchemy import Column, String, select
 
 import getting_data.extract_fulltext_from_pdf.fulltext as fulltext_module
@@ -16,6 +17,32 @@ from sqlalchemy_util.sqlalchemy_methods import add_column, get_tables_by_reflect
 
 fulltext_module.log.propagate = False
 fulltext_module.log.disabled = True
+last_request = [0]
+
+def download(obj,dirpath='./'):
+    if dirpath[-1] != '/':
+        dirpath += '/'
+    file = slugify(obj) + '.pdf'
+    path = dirpath + file
+    out = None
+    min_diff = 3
+    for k in range(3):
+        try:
+            time_diff = time() - last_request[0]
+            if time_diff < min_diff:
+                print('time-diff: %0.2f; now sleeping for %0.2f'%(time_diff,min_diff-time_diff))
+                sleep(min_diff-time_diff)
+
+            last_request[0] = time()
+            urlretrieve(obj['pdf_url'], path)
+            out = file
+            break
+        except Exception as e:
+            sleep(k)
+        if out is None:
+            print('could not download: %s'%file)
+            # traceback.print_exc()
+    return out
 
 def parse_pdf_to_text(pdffile):
     content=None
@@ -44,7 +71,7 @@ if __name__ == '__main__':
     home = str(Path.home())
     download_path=home+'/data/arxiv_papers/ml_nlp'
 
-    already_downloaded_files = os.listdir(download_path)
+    # already_downloaded_files = os.listdir(download_path)
 
     with sqlalchemy_engine.connect() as conn:
         g = conn.execute(select([arxiv_table.c.id,arxiv_table.c.pdf_url,arxiv_table.c.title]).where(arxiv_table.c.pdf_full_text.is_(None)))
@@ -52,9 +79,12 @@ if __name__ == '__main__':
             # if k%100==0:
             print(k)
             d = {k:json.loads(v) for k,v in d.items()}
-            file = slugify(d) + '.pdf'
-            if file in already_downloaded_files:
-                text = parse_pdf_to_text(download_path+'/'+file)
+            file = download_path+'/'+slugify(d) + '.pdf'
+            if not os.path.isfile(file):
+                download(d,download_path)
+
+            if os.path.isfile(file):
+                text = parse_pdf_to_text(file)
                 if isinstance(text,str) and len(text)>0:
                     # print(file)
                     # data_io.write_to_file('/tmp/'+file+'.txt',[text])
