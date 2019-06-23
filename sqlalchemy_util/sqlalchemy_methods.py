@@ -5,7 +5,7 @@ import multiprocessing
 import sys
 
 from commons import util_methods
-from sqlalchemy import bindparam, Table, select, String, Column
+from sqlalchemy import bindparam, Table, select, String, Column, func
 from typing import Tuple, List, Any, Dict, Iterable
 
 from sqlalchemy.engine import Connection
@@ -126,7 +126,9 @@ def fetch_batch_wise(q,max_queue_size=3,batch_size = 10000):
             yield d
     process.join()
 
-def get_tables_by_reflection():
-    assert False # TODO
-    sqlalchemy_base.metadata.reflect(sqlalchemy_engine)
-    return sqlalchemy_base.metadata.tables
+def get_tables_by_reflection(sqlalchemy_metadata,sqlalchemy_engine):
+    sqlalchemy_metadata.reflect(sqlalchemy_engine)
+    return sqlalchemy_metadata.tables
+
+def count_rows(sqlalchemy_engine,table):
+    return sqlalchemy_engine.execute(select([func.count(table.c.id)])).first()[0]
