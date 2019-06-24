@@ -23,61 +23,67 @@ from torch.utils.data import Dataset
 TAG_TYPE = 'ner'
 
 
-def read_scierc_data_to_FlairSentences(table_name = 'scierc')->Dataset:
-    def prefix_to_BIOES(label,start,end,current_index):
-        if end - start > 0:
-            if current_index == start:
-                prefix = 'B'
-            elif current_index == end:
-                prefix = 'E'
-            else:
-                prefix = 'I'
+def prefix_to_BIOES(label, start, end, current_index):
+    if end - start > 0:
+        if current_index == start:
+            prefix = 'B'
+        elif current_index == end:
+            prefix = 'E'
         else:
-            prefix = 'S'
+            prefix = 'I'
+    else:
+        prefix = 'S'
 
-        return prefix+'-'+label
+    return prefix + '-' + label
 
-    def tag_it(token:Token,index,ner_spans):
-        labels = [(start,end,label) for start,end,label in ner_spans if index>=start and index<=end]
 
-        if len(labels)>0:
-            for start,end,label in labels:
-                token.add_tag(TAG_TYPE, prefix_to_BIOES(label, start, end, index))
-        else:
-            token.add_tag(TAG_TYPE, 'O')
+def tag_it(token: Token, index, ner_spans):
+    labels = [(start, end, label) for start, end, label in ner_spans if index >= start and index <= end]
 
-    def build_sentences(d:Dict)->List[Sentence]:
-        offset=0
-        sentences = []
-        for tokens,ner_spans in zip(d['sentences'],d['ner']):
-            sentence: Sentence = Sentence()
-            [sentence.add_token(Token(tok)) for tok in tokens]
-            [tag_it(token,k+offset,ner_spans) for k,token in enumerate(sentence)]
-            offset+=len(tokens)
-            sentences.append(sentence)
+    if len(labels) > 0:
+        for start, end, label in labels:
+            token.add_tag(TAG_TYPE, prefix_to_BIOES(label, start, end, index))
+    else:
+        token.add_tag(TAG_TYPE, 'O')
 
-        return sentences
 
-    columns = [Column('id', String, primary_key=True)] + [Column(colname, String) for colname in ['sentences','ner','relations','clusters']]
-    table = Table(table_name, sqlalchemy_base.metadata, *columns, extend_existing=True)
+def build_sentences(d: Dict) -> List[Sentence]:
+    offset = 0
+    sentences = []
+    for tokens, ner_spans in zip(d['sentences'], d['ner']['annotator_luan']):
+        sentence: Sentence = Sentence()
+        [sentence.add_token(Token(tok)) for tok in tokens]
+        [tag_it(token, k + offset, ner_spans) for k, token in enumerate(sentence)]
+        offset += len(tokens)
+        sentences.append(sentence)
+
+    return sentences
+
+
+def read_scierc_data_to_FlairSentences(table:Table)->Dataset:
+    colnames = [c.name for c in table.columns]
+    assert all([c in colnames for c in ['sentences','ner','relations','clusters']])
+
     q = select([table]).limit(1000000)
     def process_row(d):
-        datum = {c.name:json.loads(d[c.name]) for c in columns}
-        # datum = json.loads('{%s}'%','.join(['"%s":%s'%(c.name,d[c.name].replace("'",'"')) for c in columns if c.name != 'id']))
-        # datum['id']=d['id']
+        datum = {c.name:json.loads(d[c.name]) for c in table.columns}
         return datum
     data_g = (process_row(d) for d in fetch_batch_wise(q,sqlalchemy_engine,batch_size=100))
     dataset:Dataset = [sent for d in data_g for sent in build_sentences(d)]
     return dataset
 
 
-def train_seqtagger():
+def train_seqtagger(train_data:Dataset,
+                    dev_data:Dataset,
+                    test_data:Dataset
+                    ):
     corpus = Corpus(
-        train=read_scierc_data_to_FlairSentences('scierc'),
-        dev=read_scierc_data_to_FlairSentences('scierc'),
-        test=read_scierc_data_to_FlairSentences('scierc'), name='scierc')
+        train=train_data,
+        dev=dev_data,
+        test=test_data,
+        name='scierc')
+
     pprint(Counter([tok.tags[TAG_TYPE].value for sent in corpus.train for tok in sent]))
-    pprint(Counter([tok.tags[TAG_TYPE].value for sent in corpus.test for tok in sent]))
 
     tag_dictionary = corpus.make_tag_dictionary(tag_type=TAG_TYPE)
     print(tag_dictionary.idx2item)
@@ -106,13 +112,20 @@ def train_seqtagger():
                   mini_batch_size=32,
                   max_epochs=20)
 
-    plotter = Plotter()
-    plotter.plot_training_curves('%s/loss.tsv' % save_path)
-    plotter.plot_weights('%s/weights.txt' % save_path)
+    # plotter = Plotter()
+    # plotter.plot_training_curves('%s/loss.tsv' % save_path)
+    # plotter.plot_weights('%s/weights.txt' % save_path)
 
     from sequence_tagging.evaluate_flair_tagger import evaluate_sequence_tagger
     pprint('train-f1-macro: %0.2f'%evaluate_sequence_tagger(tagger,corpus.train)['f1-macro'])
+    pprint('dev-f1-macro: %0.2f'%evaluate_sequence_tagger(tagger,corpus.dev)['f1-macro'])
     pprint('test-f1-macro: %0.2f'%evaluate_sequence_tagger(tagger,corpus.test)['f1-macro'])
+    return tagger
 
 if __name__ == '__main__':
-    train_seqtagger()
+    table_name = 'scierc'
+    columns = [Column('id', String, primary_key=True)] + [Column(colname, String) for colname in ['sentences','ner','relations','clusters']]
+    table = Table(table_name, sqlalchemy_base.metadata, *columns, extend_existing=True)
+
+    train_data = read_scierc_data_to_FlairSentences(table)
+    train_seqtagger(train_data,train_data,train_data)
