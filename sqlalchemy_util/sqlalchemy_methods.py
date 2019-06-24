@@ -93,10 +93,12 @@ def insert_if_not_existing(conn, table:Table, data:Iterable, batch_size=10000):
 
     util_methods.consume_batchwise(insert_batch, data, batch_size)
 
-def fetcher_queue_filler(queue:multiprocessing.Queue,
-                         query:Query,
-                         batch_size=10000):
-    assert False # TODO
+def fetcher_queue_filler(
+        sqlalchemy_engine,
+        queue:multiprocessing.Queue,
+        query:Query,
+        batch_size=10000):
+
     proxy = sqlalchemy_engine.execution_options(stream_results=True).execute(query)
     while True:
         batch = proxy.fetchmany(batch_size)
@@ -106,12 +108,13 @@ def fetcher_queue_filler(queue:multiprocessing.Queue,
         queue.put(batch)
         # sys.stdout.write('\rqueue-size: %d'%queue.qsize())
 
-def fetch_batch_wise(q,max_queue_size=3,batch_size = 10000):
+def fetch_batch_wise(q,sqlalchemy_engine,max_queue_size=3,batch_size = 10000):
     fetched_queue = multiprocessing.Queue(max_queue_size)
     process = multiprocessing.Process(
         name='fetcher',
         target=fetcher_queue_filler,
         kwargs={
+            'sqlalchemy_engine':sqlalchemy_engine,
             'queue': fetched_queue,
             'query': q,
             'batch_size':batch_size
