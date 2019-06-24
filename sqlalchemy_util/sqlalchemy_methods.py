@@ -28,7 +28,7 @@ def bulk_update(conn:Connection,table:Table,col_name:str,ids_values:List[Tuple])
     conn.execute(stmt, [{'obj_id': eid, 'val': val} for eid, val in ids_values])
 
 
-def add_column(engine, table_name, column):
+def add_column(engine, table_name, column:Column):
     column_name = column.compile(dialect=engine.dialect)
     column_type = column.type.compile(engine.dialect)
     engine.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table_name, column_name, column_type))
@@ -107,6 +107,19 @@ def fetcher_queue_filler(
             break
         queue.put(batch)
         # sys.stdout.write('\rqueue-size: %d'%queue.qsize())
+
+def fetchemany_sqlalchemy(
+        sqlalchemy_engine,
+        query:Query,
+        batch_size=10000):
+
+    proxy = sqlalchemy_engine.execution_options(stream_results=True).execute(query)
+    while True:
+        batch = proxy.fetchmany(batch_size)
+        if batch == []:
+            raise StopIteration
+        else:
+            yield batch
 
 def fetch_batch_wise(q,sqlalchemy_engine,max_queue_size=3,batch_size = 10000):
     fetched_queue = multiprocessing.Queue(max_queue_size)
