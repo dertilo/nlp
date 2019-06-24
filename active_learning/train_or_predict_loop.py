@@ -7,6 +7,7 @@ import sqlalchemy
 from sqlalchemy import Table, String, Column, select, create_engine, func
 from sqlalchemy.ext.declarative import declarative_base
 
+from active_learning.datamanagement_methods import row_to_dict
 from active_learning.train_flair_seqtagger_from_postgres import build_sentences
 from sequence_tagging.seq_tag_util import tags_to_token_spans
 from sequence_tagging.spacy_features_sklearn_crfsuite import SpacyCrfSuiteTagger
@@ -14,12 +15,10 @@ from sqlalchemy_util.sqlalchemy_methods import bulk_update, fetchemany_sqlalchem
 
 annotator_machine = 'annotator_machine'
 
-def row_to_dict(row):
-    return {k:json.loads(v) if v is not None else None for k,v in row.items() }
 
 def train_model():
     g = sqlalchemy_engine.execute(select([table]).where(sqlalchemy.not_(table.c.ner.like('%'+annotator_machine+'%'))))
-    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d),annotator_name='annotator_luan')]
+    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_name='annotator_luan')]
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
     tagger = SpacyCrfSuiteTagger()
     tagger.fit(train_data)
