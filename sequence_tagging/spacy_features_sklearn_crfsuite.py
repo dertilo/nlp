@@ -22,6 +22,15 @@ class SpacyCrfSuiteTagger(object):
         self.nlp.tokenizer = Tokenizer(nlp.vocab,infix_finditer=infix_re.finditer)
 
     def fit(self,data:List[List[Tuple[str,str]]]):
+
+        # tag_counter = Counter([tag for sent in data for _,tag in sent])
+        # tag2count = {t: c for t, c in tag_counter.items() if t != 'O'}
+        # # print(tag2count)
+        #
+        # dictionary = Dictionary()
+        # [dictionary.add_item(t) for t in tag2count]
+        # dictionary.add_item('O')
+
         start = time()
         processed_data = [self.extract_features_with_spacy(datum) for datum in data]
         print('spacy-processing train-data took: %0.2f'%(time()-start))
@@ -58,26 +67,17 @@ def get_UD_English_data():
     print('test-data-len: %d' % len(test_data_flair))
 
     tag_type = 'pos'
-    # tag_dictionary = corpus.make_tag_dictionary(tag_type=tag_type)
-    tag_counter = Counter([t.tags['pos'].value for datum in train_data_flair for t in datum])
 
     def filter_tags(tag):
         return tag# if tag_counter[tag] > 50 else 'O'
 
-    tag2count = {t: c for t, c in tag_counter.items() if filter_tags(t) != 'O'}
-    print(tag2count)
-
-    dictionary = Dictionary()
-    [dictionary.add_item(t) for t in tag2count]
-    dictionary.add_item('O')
-
     train_data = [[(token.text, filter_tags(token.tags['pos'].value)) for token in datum] for datum in train_data_flair]
     test_data = [[(token.text, filter_tags(token.tags['pos'].value)) for token in datum] for datum in test_data_flair]
-    return train_data, test_data,dictionary,tag_type
+    return train_data, test_data,tag_type
 
 if __name__ == '__main__':
 
-    train_data, test_data,dictionary,tag_type = get_UD_English_data()
+    train_data, test_data,tag_type = get_UD_English_data()
 
     tagger = SpacyCrfSuiteTagger()
     tagger.fit(train_data)
