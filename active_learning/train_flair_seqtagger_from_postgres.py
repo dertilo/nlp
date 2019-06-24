@@ -47,18 +47,21 @@ def tag_it(token: Token, index, ner_spans):
         token.add_tag(TAG_TYPE, 'O')
 
 
-def build_sentences(d: Dict) -> List[Sentence]:
-    offset = 0
-    sentences = []
-    for tokens, ner_spans in zip(d['sentences'], d['ner']['annotator_luan']):
-        sentence: Sentence = Sentence()
-        [sentence.add_token(Token(tok)) for tok in tokens]
-        [tag_it(token, k + offset, ner_spans) for k, token in enumerate(sentence)]
-        offset += len(tokens)
-        sentences.append(sentence)
+def build_sentences(d: Dict,annotator_name=None) -> List[Sentence]:
 
+    sentences = [build_flair_Sentence(tokens) for tokens in d['sentences']]
+
+    if annotator_name is not None:
+        offset = 0
+        for sentence, ner_spans in zip(sentences, d['ner'][annotator_name]):
+            [tag_it(token, k + offset, ner_spans) for k, token in enumerate(sentence)]
+            offset += len(sentence)
     return sentences
 
+def build_flair_Sentence(tokens):
+    sentence: Sentence = Sentence()
+    [sentence.add_token(Token(tok)) for tok in tokens]
+    return sentence
 
 def read_scierc_data_to_FlairSentences(table:Table)->Dataset:
     colnames = [c.name for c in table.columns]
