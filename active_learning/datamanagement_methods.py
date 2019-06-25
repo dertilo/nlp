@@ -6,7 +6,9 @@ import numpy
 from commons import data_io
 from sqlalchemy import create_engine, select
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Query
 
+from sqlalchemy_util.sqlalchemy_base import get_sqlalchemy_base_engine
 from sqlalchemy_util.sqlalchemy_methods import get_tables_by_reflection
 
 
@@ -90,28 +92,56 @@ def to_notes_ann_line(d):
     s='#%d\tAnnotatorNotes %s\t%s' % (d['id'], d['refering_to'],d['value'])
     return s
 
-if __name__ == '__main__':
-    sqlalchemy_base = declarative_base()
-    ip = '10.1.1.29'
-    sqlalchemy_engine = create_engine('postgresql://%s' % 'postgres:whocares@%s:5432/postgres'%ip)
-    sqlalchemy_base.metadata.bind = sqlalchemy_engine
-    table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
-
-    g = sqlalchemy_engine.execute(select([table]).limit(3))
-
-    path = './brat_configurations'
+def write_brat_annotations(q:Query,
+                           path,
+                           sqlalchemy_engine):
     if not os.path.isdir(path):
         os.mkdir(path)
-
-    for d in g:
-        doc_name, text, spans, relations, attributes,notes = build_brat_lines(row_to_dict(d))
-        data_io.write_to_file(path+'/'+doc_name+'.txt',[text])
+    for d in sqlalchemy_engine.execute(q):
+        doc_name, text, spans, relations, attributes, notes = build_brat_lines(row_to_dict(d))
+        data_io.write_to_file(path + '/' + doc_name + '.txt', [text])
 
         lines = [span_to_ann_line(d, text) for d in spans]
         lines += [to_rel_ann_line(d) for d in relations]
         lines += [to_attr_ann_line(d) for d in attributes]
         lines += [to_notes_ann_line(d) for d in notes]
-        data_io.write_to_file(path+'/'+doc_name+'.ann',lines)
+        data_io.write_to_file(path + '/' + doc_name + '.ann', lines)
+
+
+def parse_anno_line(line:str):
+    out = {}
+    if line.startswith('T'):
+        ann_id,label_start_end,surface_text = line.split('\t')
+        label, start, end  = label_start_end.split(' ')
+        out = {'id':ann_id,'start':int(start),'end':end,'label':label,'surface_text':surface_text}
+    elif line.startswith('A'):
+        ann_id,type_refto_val = line.split('\t')
+        attr_type, refto, val  = type_refto_val.split(' ')
+        out = {'id':ann_id,'attr_type':attr_type,'refering_to':refto,'value':val}
+
+    elif line.startswith('R'):
+        ann_id,label_id1_id2 = line.split('\t')
+        label, arg_id1, arg_id2  = label_id1_id2.split(' ')
+        out = {'id':ann_id,'label':label,'id1':arg_id1.replace('Arg1:',''),'id2':arg_id2.replace('Arg2:','')}
+
+    elif line.startswith('#'):
+        ann_id,bla_refering_to,value = line.split('\t')
+        _ , refering_to  = bla_refering_to.split(' ')
+        out = {'id':ann_id,'refering_to':refering_to,'value':value}
+    return out
+
+if __name__ == '__main__':
+    # ip = '10.1.1.29'
+    ip = 'localhost'
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
+
+    brat_path = './brat_configurations'
+    write_brat_annotations(select([table]).limit(3), brat_path, sqlalchemy_engine)
+    anno_files = [brat_path + '/' + f for f in os.listdir(brat_path) if f.endswith('.ann')]
+
+    parsed_lines = [parse_anno_line(l) for l in data_io.read_lines(anno_files[0])]
+    print()
 
 
 
