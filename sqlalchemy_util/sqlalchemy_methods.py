@@ -108,7 +108,7 @@ def fetcher_queue_filler(
         queue.put(batch)
         # sys.stdout.write('\rqueue-size: %d'%queue.qsize())
 
-def fetchemany_sqlalchemy(
+def fetchmany_sqlalchemy(
         sqlalchemy_engine,
         query:Query,
         batch_size=10000):
@@ -116,10 +116,10 @@ def fetchemany_sqlalchemy(
     proxy = sqlalchemy_engine.execution_options(stream_results=True).execute(query)
     while True:
         batch = proxy.fetchmany(batch_size)
-        if batch == []:
-            raise StopIteration
-        else:
+        if len(batch)>0:
             yield batch
+        else:
+            break
 
 def fetch_batch_wise(q,sqlalchemy_engine,max_queue_size=3,batch_size = 10000):
     fetched_queue = multiprocessing.Queue(max_queue_size)
