@@ -31,9 +31,7 @@ def predict_on_db(model:SpacyCrfSuiteTagger):
         sentences_flair = [(d['id'],sent_idx,sent) for d in batch for sent_idx,sent in enumerate(build_sentences(d))]
         data = [[token.text for token in sentence] for doc_id,sent_id,sentence in sentences_flair]
         pred_tags = model.predict(data)
-        ner = {d['id']:[None for _ in range(len(d['sentences']))] for d in batch}
-        for (doc_id, sent_id, _), tag_seq in zip(sentences_flair, pred_tags):
-            ner[doc_id][sent_id] = tags_to_token_spans(tag_seq)
+        ner = group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair)
 
         def value_to_write(d,annotations):
             if isinstance(d['ner'],dict):
@@ -49,6 +47,14 @@ def predict_on_db(model:SpacyCrfSuiteTagger):
 
         if traindata_significantly_changed():
             break
+
+
+def group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair):
+    ner = {d['id']: [None for _ in range(len(d['sentences']))] for d in batch}
+    for (doc_id, sent_id, _), tag_seq in zip(sentences_flair, pred_tags):
+        ner[doc_id][sent_id] = tags_to_token_spans(tag_seq)
+    return ner
+
 
 last_num_annotated_docs=[0]
 
