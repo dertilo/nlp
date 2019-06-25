@@ -64,6 +64,17 @@ def insert_or_update_batch(conn, table:Table,columns_to_update, rows:List[Dict],
         conn.execute(stmt, [{**{'obj_id': d['id']}, **build_dict_of_processed_values(d)}
                       for d in rows_to_update])
 
+def update_batchwise(sqlalchemy_engine, q:Query, table:Table, process_fun, batch_size=1000):
+    with sqlalchemy_engine.connect() as conn:
+        for batch in fetchmany_sqlalchemy(sqlalchemy_engine,q,batch_size):
+            processed_batch = process_fun(batch)
+            columns_to_update = processed_batch[0].keys()
+
+            stmt = table.update().\
+                where(table.c.id == bindparam('obj_id')). \
+                values(**{col_name: bindparam('val_' + col_name) for col_name in columns_to_update if col_name!='id'})
+
+            conn.execute(stmt, processed_batch)
 
 
 def insert_or_overwrite(conn, table:Table, rows:List[Dict]):
@@ -121,7 +132,11 @@ def fetchmany_sqlalchemy(
         else:
             break
 
-def fetch_batch_wise(q,sqlalchemy_engine,max_queue_size=3,batch_size = 10000):
+def fetch_batch_wise_queueing(q, sqlalchemy_engine, max_queue_size=3, batch_size = 10000):
+    '''
+    TODO: is this really good for anything??
+    maybe only if data that is going through queue is small and sql-quering-time high!
+    '''
     fetched_queue = multiprocessing.Queue(max_queue_size)
     process = multiprocessing.Process(
         name='fetcher',
