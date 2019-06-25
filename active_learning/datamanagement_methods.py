@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Iterable, Dict
+from typing import Iterable, Dict, List
 
 import numpy
 from commons import data_io
@@ -17,10 +17,7 @@ def row_to_dict(row):
 
 
 def build_brat_lines(doc:Dict, annatators_of_interest=None):
-    g = [tok for sent in doc['sentences'] for tok in sent]
-    spaced_tokens = [x for k,tok in enumerate(g) for x in [(tok,k),(' ',k+0.5)]]
-    char_offsets = numpy.cumsum([0]+[len(x) for x,_ in spaced_tokens])
-    tok2charoff = {k:char_offsets[i] for i,(tok,k) in enumerate(spaced_tokens)}
+    spaced_tokens, tok2charoff,tok2sent_id = spaced_tokens_and_tokenoffset2charoffset(doc['sentences'])
     text = ''.join([t for t,_ in spaced_tokens])
 
     def is_annotator_of_interest(annotator_name):
@@ -76,6 +73,17 @@ def build_brat_lines(doc:Dict, annatators_of_interest=None):
     return file_name, text, spans, relations,attributes, notes
 
 
+def spaced_tokens_and_tokenoffset2charoffset(sentences:List[List[str]]):
+    g = [(sent_id,tok) for sent_id,sent in enumerate(sentences) for tok in sent]
+    spaced_tokens = [x for tok_id, (sent_id,tok) in enumerate(g) for x in [(tok, tok_id), (' ', tok_id + 0.5)]]
+    tok2sent_id = {tok_id:sent_id for tok_id, (sent_id,tok) in enumerate(g)}
+    char_offsets = numpy.cumsum([0] + [len(x) for x, _ in spaced_tokens])
+    tok2charoff = {tok_id: char_offsets[i] for i, (tok, tok_id) in enumerate(spaced_tokens)}
+    return spaced_tokens, tok2charoff,tok2sent_id
+
+def charoffset2tokenoffset(sentences:List[List[str]]):
+    _ ,tokenoffset2charoffset,_ = spaced_tokens_and_tokenoffset2charoffset(sentences)
+    return {v:k for k,v in tokenoffset2charoffset.items() if round(k)==k}
 
 def span_to_ann_line(d,text):
     s='T%d\t%s %d %d\t%s' % (d['id'], d['label'], d['start'], d['end'],text[d['start']:d['end']])
@@ -98,14 +106,20 @@ def write_brat_annotations(q:Query,
     if not os.path.isdir(path):
         os.mkdir(path)
     for d in sqlalchemy_engine.execute(q):
-        doc_name, text, spans, relations, attributes, notes = build_brat_lines(row_to_dict(d))
-        data_io.write_to_file(path + '/' + doc_name + '.txt', [text])
+        doc = row_to_dict(d)
+        write_brat_annotation(doc, path)
 
-        lines = [span_to_ann_line(d, text) for d in spans]
-        lines += [to_rel_ann_line(d) for d in relations]
-        lines += [to_attr_ann_line(d) for d in attributes]
-        lines += [to_notes_ann_line(d) for d in notes]
-        data_io.write_to_file(path + '/' + doc_name + '.ann', lines)
+
+def write_brat_annotation(doc, path):
+    doc_name, text, spans, relations, attributes, notes = build_brat_lines(doc)
+    data_io.write_to_file(path + '/' + doc_name + '.txt', [text])
+    lines = [span_to_ann_line(d, text) for d in spans]
+    lines += [to_rel_ann_line(d) for d in relations]
+    lines += [to_attr_ann_line(d) for d in attributes]
+    lines += [to_notes_ann_line(d) for d in notes]
+    ann_file = path + '/' + doc_name + '.ann'
+    data_io.write_to_file(ann_file, lines)
+    return ann_file
 
 
 def parse_anno_line(line:str):
@@ -113,7 +127,8 @@ def parse_anno_line(line:str):
     if line.startswith('T'):
         ann_id,label_start_end,surface_text = line.split('\t')
         label, start, end  = label_start_end.split(' ')
-        out = {'id':ann_id,'start':int(start),'end':end,'label':label,'surface_text':surface_text}
+        out = {'id':ann_id,'start':int(start),'end':int(end),'label':label,'surface_text':surface_text}
+
     elif line.startswith('A'):
         ann_id,type_refto_val = line.split('\t')
         attr_type, refto, val  = type_refto_val.split(' ')
@@ -130,6 +145,32 @@ def parse_anno_line(line:str):
         out = {'id':ann_id,'refering_to':refering_to,'value':value}
     return out
 
+import numpy as np
+def build_ner(parsed_lines,char2tok:dict,tok2sent_id:dict):
+    annotator2ids={}
+    for d in parsed_lines:
+        if d.get('attr_type', '') == 'Annotator':
+            if d['value'] in annotator2ids.keys():
+                annotator2ids[d['value']].append(d['refering_to'])
+            else:
+                annotator2ids[d['value']]=[d['refering_to']]
+
+    def get_closest_tok(cid):
+        char_offsets = [k for k in char2tok.keys()]
+        argmin = np.argmin(np.abs(np.array(char_offsets) - cid))
+        return char2tok[char_offsets[argmin]]
+
+    def build_tokenoffsets(ids):
+        sent_ids = set(tok2sent_id.values())
+        annos = [[] for _ in range(len(sent_ids))]
+        for d in parsed_lines:
+            if d['id'] in ids:
+                start_tok = get_closest_tok(d['start'])
+                end_tok = get_closest_tok(d['end'])-1
+                annos[tok2sent_id[start_tok]].append([start_tok,end_tok,d['label']])
+        return annos
+    return {'annotator_%s'%a:build_tokenoffsets(ids) for a,ids in annotator2ids.items()}
+
 if __name__ == '__main__':
     # ip = '10.1.1.29'
     ip = 'localhost'
@@ -137,11 +178,23 @@ if __name__ == '__main__':
     table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
 
     brat_path = './brat_configurations'
-    write_brat_annotations(select([table]).limit(3), brat_path, sqlalchemy_engine)
-    anno_files = [brat_path + '/' + f for f in os.listdir(brat_path) if f.endswith('.ann')]
+    # write_brat_annotations(select([table]).limit(3), brat_path, sqlalchemy_engine)
+    for d in sqlalchemy_engine.execute(select([table]).limit(3)):
+        doc = row_to_dict(d)
+        ann_file = write_brat_annotation(doc, brat_path)
+        _, _, tok2sent_id = spaced_tokens_and_tokenoffset2charoffset(doc['sentences'])
+        c2t = charoffset2tokenoffset(doc['sentences'])
+        parsed_lines = [parse_anno_line(l) for l in data_io.read_lines(ann_file)]
+        ner = build_ner(parsed_lines,c2t,tok2sent_id)
 
-    parsed_lines = [parse_anno_line(l) for l in data_io.read_lines(anno_files[0])]
-    print()
+        assert(all([s1==s2 and e1==e2 and l1==l2 and a1==a2
+                    for (a1,sents1),(a2,sents2) in zip(doc['ner'].items(),ner.items())
+                    for x,y in zip(sents1,sents2)
+                    for (s1,e1,l1),(s2,e2,l2) in zip(x,y)]))
+
+
+
+
 
 
 
