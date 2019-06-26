@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Iterable, Dict, List
+from typing import Iterable, Dict, List, Union, Any
 
 import numpy
 from commons import data_io
@@ -9,8 +9,20 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Query
 
 from sqlalchemy_util.sqlalchemy_base import get_sqlalchemy_base_engine
-from sqlalchemy_util.sqlalchemy_methods import get_tables_by_reflection
+from sqlalchemy_util.sqlalchemy_methods import get_tables_by_reflection, bulk_update
 
+DONE_ANNO = 'DoneAnnotating'
+annotator_machine = 'annotator_machine'
+annotator_luan = 'annotator_luan'
+annotator_human = 'annotator_human'
+
+
+def overwrite_ner_annotations(old_ner, annotations,annotator):
+    if isinstance(old_ner,dict):
+        old_ner[annotator]= annotations
+    else:
+        old_ner = {annotator:annotations}
+    return old_ner
 
 def row_to_dict(row):
     return {k:json.loads(v) if v is not None else None for k,v in row.items() }
@@ -69,7 +81,7 @@ def build_brat_lines(doc:Dict, annatators_of_interest=None):
     attributes = [{'ann_type':'A','id':eid,'refering_to':'%s%d'%(d['ann_type'],d['id']),'attribute_type':'Annotator','value':d['annotator'].replace('annotator_','')} for eid,d in enumerate(spans)]
     notes = [{'id':eid,'refering_to':'%s%d'%(d['ann_type'],d['id']),'value':'annotator=%s'%d['annotator'].replace('annotator_','')} for eid,d in enumerate(spans+relations)]
 
-    file_name = doc['id'].replace('/','').replace(':','')
+    file_name = doc['id']
     return file_name, text, spans, relations,attributes, notes
 
 
@@ -146,6 +158,7 @@ def parse_anno_line(line:str):
     return out
 
 import numpy as np
+
 def build_ner(parsed_lines,char2tok:dict,tok2sent_id:dict):
     annotator2ids={}
     for d in parsed_lines:
@@ -164,12 +177,44 @@ def build_ner(parsed_lines,char2tok:dict,tok2sent_id:dict):
         sent_ids = set(tok2sent_id.values())
         annos = [[] for _ in range(len(sent_ids))]
         for d in parsed_lines:
-            if d['id'] in ids:
+            if d['id'].startswith('T') and d['id'] in ids and d['label']!= DONE_ANNO:
                 start_tok = get_closest_tok(d['start'])
                 end_tok = get_closest_tok(d['end'])-1
                 annos[tok2sent_id[start_tok]].append([start_tok,end_tok,d['label']])
+
         return annos
-    return {'annotator_%s'%a:build_tokenoffsets(ids) for a,ids in annotator2ids.items()}
+
+    def ner_annotations_of_unkown_annotator(parsed_lines):
+        sent_ids = set(tok2sent_id.values())
+        annos = [[] for _ in range(len(sent_ids))]
+        for d in parsed_lines:
+            if d['id'].startswith('T') and d['label'] != DONE_ANNO:
+                start_tok = get_closest_tok(d['start'])
+                end_tok = get_closest_tok(d['end']) - 1
+                annos[tok2sent_id[start_tok]].append([start_tok, end_tok, d['label']])
+        return annos
+
+    annos = ner_annotations_of_unkown_annotator(parsed_lines)
+
+    d = {'annotator_%s' % a: build_tokenoffsets(ids) for a, ids in annotator2ids.items()}
+    d[annotator_human]=annos
+    return d
+
+def join_all_ner_annotations(ner_anno:Dict[str, List], sentences:List[List[str]]):
+    merged_spans=[[] for _ in range(len(sentences))]
+    for annotator, sent_spans in ner_anno.items():
+        assert len(sent_spans) == len(sentences)
+        for sent_id, spans in enumerate(sent_spans):
+            merged_spans[sent_id].extend(spans)
+    return merged_spans
+
+def parse_anno_lines(lines:List[str],sentences:List[List[str]]):
+    _, _, tok2sent_id = spaced_tokens_and_tokenoffset2charoffset(sentences)
+    char2tok_offsets = charoffset2tokenoffset(sentences)
+    parsed_lines = [parse_anno_line(l) for l in lines]
+    ner = build_ner(parsed_lines, char2tok_offsets, tok2sent_id)
+    return {'ner':ner}
+
 
 if __name__ == '__main__':
     # ip = '10.1.1.29'
@@ -183,18 +228,11 @@ if __name__ == '__main__':
         doc = row_to_dict(d)
         ann_file = write_brat_annotation(doc, brat_path)
         _, _, tok2sent_id = spaced_tokens_and_tokenoffset2charoffset(doc['sentences'])
-        c2t = charoffset2tokenoffset(doc['sentences'])
-        parsed_lines = [parse_anno_line(l) for l in data_io.read_lines(ann_file)]
-        ner = build_ner(parsed_lines,c2t,tok2sent_id)
+
+        anno = parse_anno_lines(data_io.read_lines(ann_file),doc['sentences'])
 
         assert(all([s1==s2 and e1==e2 and l1==l2 and a1==a2
-                    for (a1,sents1),(a2,sents2) in zip(doc['ner'].items(),ner.items())
+                    for (a1,sents1),(a2,sents2) in zip(doc['ner'].items(),anno['ner'].items())
                     for x,y in zip(sents1,sents2)
                     for (s1,e1,l1),(s2,e2,l2) in zip(x,y)]))
-
-
-
-
-
-
 

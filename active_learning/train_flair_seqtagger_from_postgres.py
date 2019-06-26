@@ -5,7 +5,7 @@ from scipy.sparse import csr_matrix # TODO(tilo): if not imported before torch i
 
 from sqlalchemy_util.sqlalchemy_base import sqlalchemy_base, sqlalchemy_engine
 from sqlalchemy import select, Table, Column, String
-from sqlalchemy_util.sqlalchemy_methods import fetch_batch_wise
+from sqlalchemy_util.sqlalchemy_methods import fetch_batch_wise_queueing
 
 import torch
 from collections import Counter
@@ -71,7 +71,7 @@ def read_scierc_data_to_FlairSentences(table:Table)->Dataset:
     def process_row(d):
         datum = {c.name:json.loads(d[c.name]) for c in table.columns}
         return datum
-    data_g = (process_row(d) for d in fetch_batch_wise(q,sqlalchemy_engine,batch_size=100))
+    data_g = (process_row(d) for d in fetch_batch_wise_queueing(q, sqlalchemy_engine, batch_size=100))
     dataset:Dataset = [sent for d in data_g for sent in build_sentences(d)]
     return dataset
 

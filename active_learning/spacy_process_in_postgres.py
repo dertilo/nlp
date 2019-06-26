@@ -23,8 +23,8 @@ def process_fun(batch):
     return processed_docs
 
 if __name__ == '__main__':
-    # ip = '10.1.1.29'
-    ip = 'localhost'
+    ip = '10.1.1.29'
+    # ip = 'localhost'
     sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
 
     arxiv_table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['arxiv']
@@ -48,7 +48,7 @@ if __name__ == '__main__':
                 pure_spacy_time+= dur
                 insert_or_update(conn, arxiv_table, [tok_sent_col], processed_batch)
     overall_dur = time() - start
-    print('old method took: %0.2f secs;spacy took: %0.2f secs; postgres: %0.2f' % (overall_dur, pure_spacy_time,overall_dur-pure_spacy_time))
+    print('old method multithreaded took: %0.2f secs;spacy took: %0.2f secs; postgres: %0.2f' % (overall_dur, pure_spacy_time,overall_dur-pure_spacy_time))
 
     start = time()
     initializer_fun('en_core_web_sm')

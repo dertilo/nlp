@@ -7,7 +7,7 @@ import sqlalchemy
 from sqlalchemy import Table, String, Column, select, func
 
 from active_learning.datamanagement_methods import row_to_dict, annotator_luan, annotator_human, \
-    annotator_machine
+    overwrite_ner_annotations, annotator_machine
 from active_learning.train_flair_seqtagger_from_postgres import build_sentences
 from sequence_tagging.seq_tag_util import tags_to_token_spans
 from sequence_tagging.spacy_features_sklearn_crfsuite import SpacyCrfSuiteTagger
@@ -35,15 +35,7 @@ def predict_on_db(model:SpacyCrfSuiteTagger):
         pred_tags = model.predict(data)
         docid2sent_spans = group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair)
 
-        def merge_ner_annotations(old_ner,annotations):
-            if isinstance(old_ner,dict):
-                old_ner[annotator_machine]= annotations
-            else:
-                old_ner = {annotator_machine:annotations}
-            return old_ner
-
-
-        processed_batch = [{'id':json.dumps(d['id']),'ner':json.dumps(merge_ner_annotations(d['ner'],docid2sent_spans[d['id']]))} for d in batch]
+        processed_batch = [{'id':json.dumps(d['id']),'ner':json.dumps(overwrite_ner_annotations(d['ner'], docid2sent_spans[d['id']],annotator_machine))} for d in batch]
         return processed_batch
 
     process_table_batchwise(sqlalchemy_engine, q, table, process_fun, batch_size=100,stop_fun=traindata_significantly_changed)
