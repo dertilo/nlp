@@ -7,7 +7,7 @@ from multiprocessing.pool import Pool
 
 from commons import util_methods
 from sqlalchemy import bindparam, Table, select, String, Column, func
-from typing import Tuple, List, Any, Dict, Iterable
+from typing import Tuple, List, Any, Dict, Iterable, Callable
 
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Query
@@ -68,28 +68,31 @@ def insert_or_update_batch(conn, table:Table,columns_to_update, rows:List[Dict],
         conn.execute(stmt, [{**{'obj_id': d['id']}, **build_dict_of_processed_values(d)}
                       for d in rows_to_update])
 
-def process_table_batchwise(sqlalchemy_engine, q:Query, table:Table, process_fun,
-                            batch_size=1000, num_processes=0,
+def process_table_batchwise(sqlalchemy_engine, q:Query, table:Table,
+                            process_fun:Callable[[Any],List[Dict[str,str]]],
+                            batch_size=1000,
+                            stop_fun=lambda:False,
+                            num_processes=0,
                             initializer_fun=None, initargs=()):
-    g = (batch for batch in fetchmany_sqlalchemy(sqlalchemy_engine, q, batch_size=batch_size))
+    batch_generator = fetchmany_sqlalchemy(sqlalchemy_engine, q, batch_size=batch_size,stop_fun=stop_fun)
     process_time = 0
     if num_processes>0:
         with sqlalchemy_engine.connect() as conn:
             with Pool(processes=num_processes, initializer=initializer_fun, initargs=initargs) as pool:
-                for processed_batch, dur in iterate_and_time(pool.imap_unordered(process_fun, g)):
+                for processed_batch, dur in iterate_and_time(pool.imap_unordered(process_fun, batch_generator)):
                     process_time+=dur
                     update_table(conn, processed_batch, table)
 
     else:
         with sqlalchemy_engine.connect() as conn:
-            processed_g = (process_fun(batch) for batch in g)
+            processed_g = (process_fun(batch) for batch in batch_generator)
             for processed_batch,dur in iterate_and_time(processed_g):
                 process_time += dur
                 update_table(conn, processed_batch, table)
     return process_time
 
 
-def update_table(conn, processed_batch, table):
+def update_table(conn, processed_batch:List[Dict[str,str]], table:Table):
     columns_to_update = list(processed_batch[0].keys())
     [d.update({'obj_id': d.pop('id')}) for d in processed_batch]
     stmt = table.update(). \
@@ -143,10 +146,13 @@ def fetcher_queue_filler(
 def fetchmany_sqlalchemy(
         sqlalchemy_engine,
         query:Query,
-        batch_size=10000):
+        batch_size=10000,
+        stop_fun=lambda :False
+    ):
 
     proxy = sqlalchemy_engine.execution_options(stream_results=True).execute(query)
     while True:
+        if stop_fun(): break
         batch = proxy.fetchmany(batch_size)
         if len(batch)>0:
             yield batch

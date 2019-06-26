@@ -4,56 +4,56 @@ import time
 
 import spacy
 import sqlalchemy
-from sqlalchemy import Table, String, Column, select, create_engine, func
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Table, String, Column, select, func
 
-from active_learning.datamanagement_methods import row_to_dict
+from active_learning.datamanagement_methods import row_to_dict, annotator_luan, annotator_human, \
+    annotator_machine
 from active_learning.train_flair_seqtagger_from_postgres import build_sentences
 from sequence_tagging.seq_tag_util import tags_to_token_spans
 from sequence_tagging.spacy_features_sklearn_crfsuite import SpacyCrfSuiteTagger
-from sqlalchemy_util.sqlalchemy_methods import bulk_update, fetchemany_sqlalchemy
-
-annotator_machine = 'annotator_machine'
+from sqlalchemy_util.sqlalchemy_base import get_sqlalchemy_base_engine
+from sqlalchemy_util.sqlalchemy_methods import process_table_batchwise
 
 
 def train_model():
-    g = sqlalchemy_engine.execute(select([table]).where(sqlalchemy.not_(table.c.ner.like('%'+annotator_machine+'%'))))
+    g = sqlalchemy_engine.execute(select([table])
+                                  .where(sqlalchemy.or_(table.c.ner.like('%' + annotator_human + '%'),
+                                                        table.c.ner.like('%' + annotator_luan + '%'))))
     train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_name='annotator_luan')]
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
     tagger = SpacyCrfSuiteTagger()
+    print('training on %d samples'%len(train_data))
     tagger.fit(train_data)
     return tagger
 
 def predict_on_db(model:SpacyCrfSuiteTagger):
-    q = select([table])
-    for batch in fetchemany_sqlalchemy(sqlalchemy_engine,q,batch_size=100):
+    q = select([table]) # here maybe some ranking
+    def process_fun(batch):
         batch = [row_to_dict(d) for d in batch]
         sentences_flair = [(d['id'],sent_idx,sent) for d in batch for sent_idx,sent in enumerate(build_sentences(d))]
         data = [[token.text for token in sentence] for doc_id,sent_id,sentence in sentences_flair]
         pred_tags = model.predict(data)
-        ner = group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair)
+        docid2sent_spans = group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair)
 
-        def value_to_write(d,annotations):
-            if isinstance(d['ner'],dict):
-                d['ner'][annotator_machine]= annotations
+        def merge_ner_annotations(old_ner,annotations):
+            if isinstance(old_ner,dict):
+                old_ner[annotator_machine]= annotations
             else:
-                d['ner'] = {annotator_machine:annotations}
+                old_ner = {annotator_machine:annotations}
+            return old_ner
 
-            return json.dumps(d['ner'])
 
-        ids_values = [(json.dumps(d['id']),value_to_write(d,ner[d['id']])) for d in batch]
-        with sqlalchemy_engine.connect() as conn:
-            bulk_update(conn,table,'ner',ids_values)
+        processed_batch = [{'id':json.dumps(d['id']),'ner':json.dumps(merge_ner_annotations(d['ner'],docid2sent_spans[d['id']]))} for d in batch]
+        return processed_batch
 
-        if traindata_significantly_changed():
-            break
+    process_table_batchwise(sqlalchemy_engine, q, table, process_fun, batch_size=100,stop_fun=traindata_significantly_changed)
 
 
 def group_by_doc_and_sent_ids_convert_tags2spans(batch, pred_tags, sentences_flair):
-    ner = {d['id']: [None for _ in range(len(d['sentences']))] for d in batch}
+    docid2sent_spans = {d['id']: [None for _ in range(len(d['sentences']))] for d in batch}
     for (doc_id, sent_id, _), tag_seq in zip(sentences_flair, pred_tags):
-        ner[doc_id][sent_id] = tags_to_token_spans(tag_seq)
-    return ner
+        docid2sent_spans[doc_id][sent_id] = tags_to_token_spans(tag_seq)
+    return docid2sent_spans
 
 
 last_num_annotated_docs=[0]
@@ -67,10 +67,10 @@ def traindata_significantly_changed():
     return significantly_changed
 
 if __name__ == '__main__':
-    sqlalchemy_base = declarative_base()
+    start = time.time()
     ip = '10.1.1.29'
-    sqlalchemy_engine = create_engine('postgresql://%s' % 'postgres:whocares@%s:5432/postgres'%ip)
-    sqlalchemy_base.metadata.bind = sqlalchemy_engine
+    # ip = 'localhost'
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
 
     table_name = 'scierc'
     columns = [Column('id', String, primary_key=True)] + [Column(colname, String) for colname in ['sentences','ner','relations','clusters','score']]
