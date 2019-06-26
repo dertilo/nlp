@@ -1,3 +1,9 @@
+import stat
+import subprocess
+import sys
+sys.path.append('.')
+
+import sqlalchemy
 import json
 import os
 from time import sleep
@@ -17,7 +23,7 @@ def collect_annotations_write_to_table(brat_path):
     eids_file_annolines = [(os.path.split(file)[1].replace('.ann', ''),file, list(data_io.read_lines(file)))
                       for file in anno_files]
     eids2annolines_to_collect = {eid:(file,anno_lines) for eid,file,anno_lines in eids_file_annolines if any([DONE_ANNO in line for line in anno_lines])}
-
+    print('found %d ann-files to collect'%len(eids2annolines_to_collect.keys()))
     query = select([table]).where(table.c.id.in_([json.dumps(eid) for eid in eids2annolines_to_collect.keys()]))
 
     def process_batch_fun(batch):
@@ -36,8 +42,10 @@ def collect_annotations_write_to_table(brat_path):
         os.remove(file)
         os.remove(file.replace('.ann', '.txt'))
 
-    [anno_files.pop(f) for f in files_to_remove]
-    return anno_files
+    return [f for f in anno_files if f not in files_to_remove]
+
+def id_from_filename(file):
+    return json.dumps(os.path.split(file)[1].replace('.ann', ''))
 
 if __name__ == '__main__':
     # ip = 'localhost'
@@ -46,11 +54,24 @@ if __name__ == '__main__':
     table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
     num_anno_docs = 10
     brat_path='/home/tilo/data/brat-data/scierc'
+    import shutil
+    if os.path.isdir(brat_path):
+        shutil.rmtree(brat_path)
+        # os.mkdir(brat_path)
+    shutil.copytree('active_learning/brat_configurations',brat_path)
+    # shutil.chown(brat_path, user='www-data', group='www-data')
+    # os.chmod(brat_path, stat.S_IWOTH | stat.S_IROTH)
+    # subprocess.call(['chmod', '777', brat_path])
     while True:
         anno_files = collect_annotations_write_to_table(brat_path)
         num_to_generate=num_anno_docs-len(anno_files)
         if num_to_generate>0:
-            write_brat_annotations(select([table]).limit(num_to_generate), brat_path, sqlalchemy_engine)
+            print('generating: %d'%num_to_generate)
+            ids = [id_from_filename(f) for f in anno_files]
+            write_brat_annotations(select([table]).where(sqlalchemy.not_(table.c.id.in_(ids))).limit(num_to_generate), brat_path, sqlalchemy_engine)
+            subprocess.call(['chmod','-R', '777', brat_path])
+            anno_files = [brat_path + '/' + f for f in os.listdir(brat_path) if f.endswith('.ann')]
+            assert len(anno_files)==num_anno_docs
         else:
             sleep(10)
 

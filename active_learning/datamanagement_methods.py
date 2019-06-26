@@ -40,32 +40,21 @@ def build_brat_lines(doc:Dict, annatators_of_interest=None):
         else:
             assert False
 
-    spans = [
-        {
-            'start':tok2charoff[token_start],
-            'end': tok2charoff[token_end+0.5],
-            'label':label,
-            'ann_type':'T',
-            'annotator':annotator
+    spans = build_ner_spans(doc, is_annotator_of_interest, tok2charoff)
 
-        }
-        for annotator,doc_spans in doc['ner'].items() if is_annotator_of_interest(annotator)
-        for sent_spans in doc_spans
-        for token_start,token_end,label in sent_spans]
-    [d.update({'id':eid}) for eid,d in enumerate(spans)]
-
-    def get_mention_id(annotator, end, start):
+    def get_mention_id(spans,annotator, end, start):
         x = [d['id'] for d in spans if
                              d['start'] == tok2charoff[start] and
                              d['end'] == tok2charoff[end + 0.5] and
                              d['annotator'] == annotator]
         assert len(x)==1
         return x[0]
+
     if doc['relations'] is not None and len(doc['relations'])>0:
         relations = [
             {
-                'mention_id1': get_mention_id(annotator, e1, s1),
-                'mention_id2': get_mention_id(annotator, e2, s2),
+                'mention_id1': get_mention_id(spans,annotator, e1, s1),
+                'mention_id2': get_mention_id(spans,annotator, e2, s2),
                 'label': label,
                 'ann_type': 'R',
                 'annotator':annotator
@@ -83,6 +72,25 @@ def build_brat_lines(doc:Dict, annatators_of_interest=None):
 
     file_name = doc['id']
     return file_name, text, spans, relations,attributes, notes
+
+
+def build_ner_spans(doc, is_annotator_of_interest, tok2charoff):
+    if doc['ner'] is None:
+        doc['ner']={}
+    spans = [
+        {
+            'start': tok2charoff[token_start],
+            'end': tok2charoff[token_end + 0.5],
+            'label': label,
+            'ann_type': 'T',
+            'annotator': annotator
+
+        }
+        for annotator, doc_spans in doc['ner'].items() if is_annotator_of_interest(annotator)
+        for sent_spans in doc_spans
+        for token_start, token_end, label in sent_spans]
+    [d.update({'id': eid}) for eid, d in enumerate(spans)]
+    return spans
 
 
 def spaced_tokens_and_tokenoffset2charoffset(sentences:List[List[str]]):

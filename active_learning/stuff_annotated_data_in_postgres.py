@@ -18,7 +18,7 @@ if __name__ == '__main__':
     # columns = [Column('id', String, primary_key=True)] + [Column(colname, String) for colname in ['sentences','ner','relations','clusters']]
     # table = Table('scierc', sqlalchemy_base.metadata, *columns, extend_existing=True)
 
-    # table.drop(sqlalchemy_engine)
+    table.drop(sqlalchemy_engine)
     if not sqlalchemy_engine.has_table(table.name):
         print('creating table %s'%table.name)
         table.create()

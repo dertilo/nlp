@@ -1,5 +1,6 @@
 import json
 import sys
+sys.path.append('.')
 import time
 
 import spacy
@@ -19,11 +20,14 @@ def train_model():
     g = sqlalchemy_engine.execute(select([table])
                                   .where(sqlalchemy.or_(table.c.ner.like('%' + annotator_human + '%'),
                                                         table.c.ner.like('%' + annotator_luan + '%'))))
-    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_name='annotator_luan')]
+    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_name=annotator_human)]
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
-    tagger = SpacyCrfSuiteTagger()
     print('training on %d samples'%len(train_data))
-    tagger.fit(train_data)
+    if len(train_data)>0:
+        tagger = SpacyCrfSuiteTagger()
+        tagger.fit(train_data)
+    else:
+        tagger = None
     return tagger
 
 def predict_on_db(model:SpacyCrfSuiteTagger):
@@ -79,6 +83,7 @@ if __name__ == '__main__':
         while not traindata_significantly_changed():
             sys.stdout.write('\rno new train-data -> idling')
             time.sleep(1)
-        # try:
+
         model = train_model()
-        predict_on_db(model)
+        if model is not None:
+            predict_on_db(model)
