@@ -3,6 +3,7 @@ import json
 import multiprocessing
 
 import sys
+from multiprocessing.pool import Pool
 
 from commons import util_methods
 from sqlalchemy import bindparam, Table, select, String, Column, func
@@ -10,6 +11,9 @@ from typing import Tuple, List, Any, Dict, Iterable
 
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Query
+
+from pytorch_util.pytorch_methods import iterate_and_time
+
 
 def to_String(v):
     if isinstance(v,list):
@@ -64,17 +68,34 @@ def insert_or_update_batch(conn, table:Table,columns_to_update, rows:List[Dict],
         conn.execute(stmt, [{**{'obj_id': d['id']}, **build_dict_of_processed_values(d)}
                       for d in rows_to_update])
 
-def update_batchwise(sqlalchemy_engine, q:Query, table:Table, process_fun, batch_size=1000):
-    with sqlalchemy_engine.connect() as conn:
-        for batch in fetchmany_sqlalchemy(sqlalchemy_engine,q,batch_size):
-            processed_batch = process_fun(batch)
-            columns_to_update = processed_batch[0].keys()
+def process_table_batchwise(sqlalchemy_engine, q:Query, table:Table, process_fun,
+                            batch_size=1000, num_processes=0,
+                            initializer_fun=None, initargs=()):
+    g = (batch for batch in fetchmany_sqlalchemy(sqlalchemy_engine, q, batch_size=batch_size))
+    process_time = 0
+    if num_processes>0:
+        with sqlalchemy_engine.connect() as conn:
+            with Pool(processes=num_processes, initializer=initializer_fun, initargs=initargs) as pool:
+                for processed_batch, dur in iterate_and_time(pool.imap_unordered(process_fun, g)):
+                    process_time+=dur
+                    update_table(conn, processed_batch, table)
 
-            stmt = table.update().\
-                where(table.c.id == bindparam('obj_id')). \
-                values(**{col_name: bindparam('val_' + col_name) for col_name in columns_to_update if col_name!='id'})
+    else:
+        with sqlalchemy_engine.connect() as conn:
+            processed_g = (process_fun(batch) for batch in g)
+            for processed_batch,dur in iterate_and_time(processed_g):
+                process_time += dur
+                update_table(conn, processed_batch, table)
+    return process_time
 
-            conn.execute(stmt, processed_batch)
+
+def update_table(conn, processed_batch, table):
+    columns_to_update = list(processed_batch[0].keys())
+    [d.update({'obj_id': d.pop('id')}) for d in processed_batch]
+    stmt = table.update(). \
+        where(table.c.id == bindparam('obj_id')). \
+        values(**{col_name: bindparam(col_name) for col_name in columns_to_update if col_name != 'id'})
+    conn.execute(stmt, processed_batch)
 
 
 def insert_or_overwrite(conn, table:Table, rows:List[Dict]):

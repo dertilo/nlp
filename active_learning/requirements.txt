@@ -1,2 +1,3 @@
 sqlalchemy
 psycopg2 # needs: sudo apt-get install libpq-dev
+spacy # python -m spacy download en_core_web_sm
