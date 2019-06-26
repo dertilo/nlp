@@ -32,7 +32,7 @@ class SpacyCrfSuiteTagger(object):
         # dictionary.add_item('O')
 
         start = time()
-        processed_data = [self.extract_features_with_spacy(datum) for datum in data]
+        processed_data = [self.extract_features_with_spacy([token for token,tag in datum]) for datum in data]
         print('spacy-processing train-data took: %0.2f'%(time()-start))
 
         self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=0.1, c2=0.1, max_iterations=20, all_possible_transitions=True)
@@ -41,16 +41,23 @@ class SpacyCrfSuiteTagger(object):
         self.crf.fit(processed_data, targets)
         print('crfsuite-fitting took: %0.2f'%(time()-start))
 
-    def extract_features_with_spacy(self, datum):
-        text = ' '.join([token for token, _ in datum])
-        doc = self.nlp(text)
-        assert len(doc) == len(datum)
-        return [
-            {'text':token.text,'lemma':token.lemma_,'pos':token.pos_,
-             # 'dep':token.dep_,
-             'shape':token.shape_,'is_alpha':token.is_alpha,'is_stop':token.is_stop}
-            for token in doc
-        ]
+    def extract_features_with_spacy(self, tokens:List[str]):
+        text = ' '.join(tokens)
+
+        try:
+            doc = self.nlp(text)
+            assert len(doc) == len(tokens)
+            features = [
+                {'text': token.text, 'lemma': token.lemma_, 'pos': token.pos_,
+                 # 'dep':token.dep_,
+                 'shape': token.shape_, 'is_alpha': token.is_alpha, 'is_stop': token.is_stop}
+                for token in doc
+            ]
+        except BaseException:
+            features = [
+                {'text': ''}
+            ]
+        return features
 
     def predict(self,data):
         processed_data = [self.extract_features_with_spacy(datum) for datum in data]
