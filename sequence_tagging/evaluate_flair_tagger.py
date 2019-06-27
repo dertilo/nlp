@@ -8,6 +8,35 @@ from flair.training_utils import clear_embeddings
 from sklearn import metrics
 from flair.models import SequenceTagger
 
+from sequence_tagging.seq_tag_util import spanwise_pr_re_f1, bilou2bio
+
+
+def calc_print_f1_scores(tagger:SequenceTagger, train_sentences, test_sentences, tag_name='pos'):
+    gold_targets_train = extract_gold_tags_from_flair_sent(tag_name, train_sentences)
+    gold_targets_test = extract_gold_tags_from_flair_sent(tag_name, test_sentences)
+
+    pred_data = flair_tagger_predict_bio(tagger, tag_name, train_sentences)
+    pprint('train-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_train, pred_data)['f1-macro'])
+    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_train)
+    pprint('train-f1-spanwise: %0.2f' % f1)
+
+    pred_data = flair_tagger_predict_bio(tagger, tag_name, test_sentences)
+    pprint('test-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_test, pred_data)['f1-macro'])
+    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_test)
+    pprint('train-f1-spanwise: %0.2f' % f1)
+
+
+def extract_gold_tags_from_flair_sent(tag_name:str, sent_flair:Sentence):
+    train_data = [[(token.text, token.tags[tag_name].value) for token in datum] for datum in sent_flair]
+    gold_targets_train = [bilou2bio([tag for token, tag in datum]) for datum in train_data]
+    return gold_targets_train
+
+
+def flair_tagger_predict_bio(tagger, tag_name, train_sentences):
+    pred_sentences = tagger.predict(train_sentences)
+    pred_data = [bilou2bio([token.tags[tag_name].value for token in datum]) for datum in pred_sentences]
+    return pred_data
+
 
 def evaluate_sequence_tagger(model:SequenceTagger,
                              sentences: List[Sentence],

@@ -16,21 +16,6 @@ import flair.datasets
 from sequence_tagging.evaluate_flair_tagger import calc_seqtag_eval_scores
 from flair.models import SequenceTagger
 
-def calc_print_f1_scores(tagger:SequenceTagger,train_sentences,test_sentences):
-    train_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in train_sentences]
-    gold_targets_train = [[tag for token, tag in datum] for datum in train_data]
-    test_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in test_sentences]
-    gold_targets_test = [[tag for token, tag in datum] for datum in test_data]
-    pred_sentences = tagger.predict(train_sentences)
-    pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
-    pprint('train-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_train, pred_data)['f1-macro'])
-    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_train)
-    pprint('train-f1-spanwise: %0.2f' % f1)
-    pred_sentences = tagger.predict(test_sentences)
-    pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
-    pprint('test-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_test, pred_data)['f1-macro'])
-    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_test)
-    pprint('train-f1-spanwise: %0.2f' % f1)
 
 
 corpus =  flair.datasets.UD_ENGLISH()
@@ -66,7 +51,18 @@ plotter.plot_weights('resources/taggers/example-ner/weights.txt')
 train_sentences = corpus.train
 test_sentences = corpus.test
 
-calc_print_f1_scores(tagger,train_sentences,test_sentences)
+train_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in train_sentences]
+gold_targets_train = [[tag for token, tag in datum] for datum in train_data]
+test_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in test_sentences]
+gold_targets_test = [[tag for token, tag in datum] for datum in test_data]
+
+pred_sentences = tagger.predict(train_sentences)
+pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
+pprint('train-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_train, pred_data)['f1-macro'])
+
+pred_sentences = tagger.predict(test_sentences)
+pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
+pprint('test-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_test, pred_data)['f1-macro'])
 
 #
 # from sklearn_crfsuite import metrics

@@ -61,7 +61,7 @@ def read_scierc_data_to_FlairSentences(
 
 if __name__ == '__main__':
     # 1. get the corpus
-    data_path = 'data/scierc_data/json/'
+    data_path = '../data/scierc_data/json/'
 
     corpus = Corpus(
         train=read_scierc_data_to_FlairSentences('%strain.json' % data_path),
@@ -112,12 +112,15 @@ if __name__ == '__main__':
     trainer.train('%s' % save_path, EvaluationMetric.MICRO_F1_SCORE,
                   learning_rate=0.01,
                   mini_batch_size=32,
-                  max_epochs=20)
+                  max_epochs=1)
 
-    plotter = Plotter()
-    plotter.plot_training_curves('%s/loss.tsv' % save_path)
-    plotter.plot_weights('%s/weights.txt' % save_path)
+    # plotter = Plotter()
+    # plotter.plot_training_curves('%s/loss.tsv' % save_path)
+    # plotter.plot_weights('%s/weights.txt' % save_path)
 
-    from sequence_tagging.evaluate_flair_tagger import evaluate_sequence_tagger
+    from sequence_tagging.evaluate_flair_tagger import evaluate_sequence_tagger, calc_print_f1_scores
+
     pprint('train-f1-macro: %0.2f'%evaluate_sequence_tagger(tagger,corpus.train)['f1-macro'])
     pprint('test-f1-macro: %0.2f'%evaluate_sequence_tagger(tagger,corpus.test)['f1-macro'])
+
+    calc_print_f1_scores(tagger,corpus.train,corpus.test,tag_name=TAG_TYPE)
