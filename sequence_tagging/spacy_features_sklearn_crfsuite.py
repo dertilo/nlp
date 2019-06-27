@@ -11,6 +11,8 @@ from flair.data import Dictionary
 from spacy.tokenizer import Tokenizer
 
 from sequence_tagging.evaluate_flair_tagger import calc_seqtag_eval_scores
+from sequence_tagging.flair_scierc_ner import read_scierc_data_to_FlairSentences
+from sequence_tagging.seq_tag_util import bilou2bio, spanwise_pr_re_f1
 
 
 class SpacyCrfSuiteTagger(object):
@@ -23,8 +25,8 @@ class SpacyCrfSuiteTagger(object):
 
     def fit(self,data:List[List[Tuple[str,str]]]):
 
-        # tag_counter = Counter([tag for sent in data for _,tag in sent])
-        # tag2count = {t: c for t, c in tag_counter.items() if t != 'O'}
+        tag_counter = Counter([tag for sent in data for _,tag in sent])
+        self.tag2count = {t: c for t, c in tag_counter.items() if t != 'O'}
         # # print(tag2count)
         #
         # dictionary = Dictionary()
@@ -35,7 +37,7 @@ class SpacyCrfSuiteTagger(object):
         processed_data = [self.extract_features_with_spacy([token for token,tag in datum]) for datum in data]
         print('spacy-processing train-data took: %0.2f'%(time()-start))
 
-        self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=0.1, c2=0.1, max_iterations=20, all_possible_transitions=True)
+        self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=0.3, c2=0.5, max_iterations=200, all_possible_transitions=True)
         targets = [[tag for token, tag in datum] for datum in data]
         start = time()
         self.crf.fit(processed_data, targets)
@@ -84,30 +86,41 @@ def get_UD_English_data():
 
 if __name__ == '__main__':
 
-    train_data, test_data,tag_type = get_UD_English_data()
+    # train_data, test_data,tag_type = get_UD_English_data()
+
+    data_path = '/home/tilo/code/NLP/scisci_nlp/data/scierc_data/json/'
+    train_data=read_scierc_data_to_FlairSentences('%strain.json' % data_path)
+    # dev_data=read_scierc_data_to_FlairSentences('%sdev.json' % data_path),
+    test_data=read_scierc_data_to_FlairSentences('%stest.json' % data_path)
+
+    # train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_names=[annotator_human,annotator_luan])]
+    train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
+    test_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in test_data]
+
 
     tagger = SpacyCrfSuiteTagger()
     tagger.fit(train_data)
+    # pprint(tagger.tag2count)
 
-    y_pred = tagger.predict(test_data)
-    from sklearn_crfsuite import metrics
+    y_pred = tagger.predict([[token for token, tag in datum] for datum in train_data])
+    y_pred = [bilou2bio([tag for tag in datum]) for datum in y_pred]
+    targets = [bilou2bio([tag for token, tag in datum]) for datum in train_data]
+    pprint(Counter([t for tags in targets for t in tags]))
+    pprint('train-f1-macro: %0.2f' % calc_seqtag_eval_scores(targets, y_pred)['f1-macro'])
+    pprint('train-f1-micro: %0.2f' % calc_seqtag_eval_scores(targets, y_pred)['f1-micro'])
+    _,_,f1 = spanwise_pr_re_f1(y_pred, targets)
+    pprint('train-f1-spanwise: %0.2f' % f1)
 
-    targets = [[tag for token, tag in datum] for datum in test_data]
-
-    # labels = list(tagger.crf.classes_)
-    #
-    # metrics.flat_f1_score(targets, y_pred, average='weighted', labels=labels)
-    #
-    # # group B and I results
-    # sorted_labels = sorted(labels, key=lambda name: (name[1:], name[0]))
-    #
-    # print(metrics.flat_classification_report(
-    #     targets, y_pred, labels=sorted_labels, digits=3
-    # ))
-
+    y_pred = tagger.predict([[token for token, tag in datum] for datum in test_data])
+    y_pred = [bilou2bio([tag for tag in datum]) for datum in y_pred]
+    targets = [bilou2bio([tag for token, tag in datum]) for datum in test_data]
     pprint('test-f1-macro: %0.2f' % calc_seqtag_eval_scores(targets, y_pred)['f1-macro'])
+    pprint('test-f1-micro: %0.2f' % calc_seqtag_eval_scores(targets, y_pred)['f1-micro'])
+    _,_,f1 = spanwise_pr_re_f1(y_pred, targets)
+    pprint('test-f1-spanwise: %0.2f'%f1)
 
 '''
+UD_English_data
 spacy-processing train-data took: 66.69
 crfsuite-fitting took: 31.05
     'test-f1-macro: 0.70'

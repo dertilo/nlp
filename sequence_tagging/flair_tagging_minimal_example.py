@@ -1,6 +1,9 @@
 import sys
 sys.path.append('.')
 from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
+
+from sequence_tagging.seq_tag_util import spanwise_pr_re_f1
+
 from pprint import pprint
 import torch
 from typing import List
@@ -11,6 +14,24 @@ from flair.visual.training_curves import Plotter
 import flair.datasets
 
 from sequence_tagging.evaluate_flair_tagger import calc_seqtag_eval_scores
+from flair.models import SequenceTagger
+
+def calc_print_f1_scores(tagger:SequenceTagger,train_sentences,test_sentences):
+    train_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in train_sentences]
+    gold_targets_train = [[tag for token, tag in datum] for datum in train_data]
+    test_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in test_sentences]
+    gold_targets_test = [[tag for token, tag in datum] for datum in test_data]
+    pred_sentences = tagger.predict(train_sentences)
+    pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
+    pprint('train-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_train, pred_data)['f1-macro'])
+    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_train)
+    pprint('train-f1-spanwise: %0.2f' % f1)
+    pred_sentences = tagger.predict(test_sentences)
+    pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
+    pprint('test-f1-macro: %0.2f' % calc_seqtag_eval_scores(gold_targets_test, pred_data)['f1-macro'])
+    _, _, f1 = spanwise_pr_re_f1(pred_data, gold_targets_test)
+    pprint('train-f1-spanwise: %0.2f' % f1)
+
 
 corpus =  flair.datasets.UD_ENGLISH()
 print(corpus)
@@ -24,7 +45,6 @@ embedding_types: List[TokenEmbeddings] = [WordEmbeddings('glove')]
 
 embeddings: StackedEmbeddings = StackedEmbeddings(embeddings=embedding_types)
 
-from flair.models import SequenceTagger
 
 tagger: SequenceTagger = SequenceTagger(hidden_size=32,
                                         embeddings=embeddings,
@@ -43,19 +63,11 @@ plotter = Plotter()
 plotter.plot_training_curves('resources/taggers/example-ner/loss.tsv')
 plotter.plot_weights('resources/taggers/example-ner/weights.txt')
 
-train_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in corpus.train]
-gold_targets_train = [[tag for token, tag in datum] for datum in train_data]
+train_sentences = corpus.train
+test_sentences = corpus.test
 
-test_data = [[(token.text, token.tags['pos'].value) for token in datum] for datum in corpus.test]
-gold_targets_test = [[tag for token, tag in datum] for datum in test_data]
+calc_print_f1_scores(tagger,train_sentences,test_sentences)
 
-pred_sentences = tagger.predict(corpus.train)
-pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
-pprint('train-f1-macro: %0.2f'%calc_seqtag_eval_scores(gold_targets_train, pred_data)['f1-macro'])
-
-pred_sentences = tagger.predict(corpus.test)
-pred_data = [[token.tags['pos'].value for token in datum] for datum in pred_sentences]
-pprint('test-f1-macro: %0.2f'%calc_seqtag_eval_scores(gold_targets_test, pred_data)['f1-macro'])
 #
 # from sklearn_crfsuite import metrics
 # print(metrics.flat_classification_report(
@@ -63,7 +75,7 @@ pprint('test-f1-macro: %0.2f'%calc_seqtag_eval_scores(gold_targets_test, pred_da
 # ))
 
 '''
-should reach 
+on UD_ENGLISH it should reach: 
 'train-f1-macro: 0.70'
 'test-f1-macro: 0.69'
 '''

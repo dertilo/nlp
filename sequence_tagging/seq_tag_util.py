@@ -162,7 +162,7 @@ def token_spans_to_char_precise_spans(token_spans:List[Tuple], start_ends:List[T
                       for span in token_spans]
 
 
-def compute_f1(label_pred, label_correct):
+def spanwise_pr_re_f1(label_pred, label_correct):
     pred_counts = [compute_TP_P(pred, gold) for pred,gold in zip(label_pred,label_correct)]
     gold_counts = [compute_TP_P(gold, pred) for pred,gold in zip(label_pred,label_correct)]
     prec = np.sum([x[0] for x in pred_counts]) / np.sum([x[1] for x in pred_counts])
@@ -190,15 +190,15 @@ def calc_print_prefixed_seqtag_metrics(gold_seqs, pred_seqs, labels):
     for label in labels:
         pred_single_label = [[keep_label_of_interest(x,label) for x in sequence] for sequence in pred_seqs]
         gold_single_label = [[keep_label_of_interest(x,label) for x in sequence] for sequence in gold_seqs]
-        prec[label], rec[label], f1_scores[label] = compute_f1(pred_single_label, gold_single_label)
+        prec[label], rec[label], f1_scores[label] = spanwise_pr_re_f1(pred_single_label, gold_single_label)
         print(label+": Prec: %.3f, Rec: %.3f, F1: %.3f" % (prec[label], rec[label], f1_scores[label]))
-    prec[all_labels], rec[all_labels], f1_scores[all_labels] = compute_f1(pred_seqs, gold_seqs)
+    prec[all_labels], rec[all_labels], f1_scores[all_labels] = spanwise_pr_re_f1(pred_seqs, gold_seqs)
     print("all-labels: Prec: %.3f, Rec: %.3f, F1: %.3f" % (prec[all_labels], rec[all_labels], f1_scores[all_labels]))
 
 def pre_re_f1(gold_seqs,pred_seqs,label):
     pred_single_label = [[keep_label_of_interest(x,label) for x in sequence] for sequence in pred_seqs]
     gold_single_label = [[keep_label_of_interest(x,label) for x in sequence] for sequence in gold_seqs]
-    return compute_f1(pred_single_label, gold_single_label)
+    return spanwise_pr_re_f1(pred_single_label, gold_single_label)
 
 def compute_TP_P(guessed, correct):
     assert len(guessed) == len(correct)
@@ -230,10 +230,6 @@ def compute_TP_P(guessed, correct):
                 idx += 1
         else:
             idx += 1
-
-    # precision = 0
-    # if count > 0:
-    #     precision = float(correctCount) / count
 
     return correctCount,count
 
