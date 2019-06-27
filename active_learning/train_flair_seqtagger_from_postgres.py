@@ -47,15 +47,16 @@ def tag_it(token: Token, index, ner_spans):
         token.add_tag(TAG_TYPE, 'O')
 
 
-def build_sentences(d: Dict,annotator_name=None) -> List[Sentence]:
+def build_sentences(d: Dict, annotator_names=[]) -> List[Sentence]:
 
     sentences = [build_flair_Sentence(tokens) for tokens in d['sentences']]
 
-    if annotator_name is not None:
-        offset = 0
-        for sentence, ner_spans in zip(sentences, d['ner'][annotator_name]):
-            [tag_it(token, k + offset, ner_spans) for k, token in enumerate(sentence)]
-            offset += len(sentence)
+    for annotator in annotator_names:
+        if annotator in d['ner']:
+            offset = 0
+            for sentence, ner_spans in zip(sentences, d['ner'][annotator]):
+                [tag_it(token, k + offset, ner_spans) for k, token in enumerate(sentence)]
+                offset += len(sentence)
     return sentences
 
 def build_flair_Sentence(tokens):
