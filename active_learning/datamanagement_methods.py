@@ -9,7 +9,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Query
 
 from sqlalchemy_util.sqlalchemy_base import get_sqlalchemy_base_engine
-from sqlalchemy_util.sqlalchemy_methods import get_tables_by_reflection, bulk_update
+from sqlalchemy_util.sqlalchemy_methods import get_tables_by_reflection, bulk_update, fetchmany_sqlalchemy
 
 DONE_ANNO = 'DoneAnnotating'
 annotator_machine = 'annotator_machine'
@@ -224,12 +224,11 @@ def parse_anno_lines(lines:List[str],sentences:List[List[str]]):
     return {'ner':ner}
 
 
-if __name__ == '__main__':
+def unittest_parse_brat_annotations():
     # ip = '10.1.1.29'
     ip = 'localhost'
-    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
-    table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
-
+    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    table = get_tables_by_reflection(sqlalchemy_base.metadata, sqlalchemy_engine)['scierc']
     brat_path = './brat_configurations'
     # write_brat_annotations(select([table]).limit(3), brat_path, sqlalchemy_engine)
     for d in sqlalchemy_engine.execute(select([table]).limit(3)):
@@ -237,10 +236,28 @@ if __name__ == '__main__':
         ann_file = write_brat_annotation(doc, brat_path)
         _, _, tok2sent_id = spaced_tokens_and_tokenoffset2charoffset(doc['sentences'])
 
-        anno = parse_anno_lines(data_io.read_lines(ann_file),doc['sentences'])
+        anno = parse_anno_lines(data_io.read_lines(ann_file), doc['sentences'])
 
-        assert(all([s1==s2 and e1==e2 and l1==l2 and a1==a2
-                    for (a1,sents1),(a2,sents2) in zip(doc['ner'].items(),anno['ner'].items())
-                    for x,y in zip(sents1,sents2)
-                    for (s1,e1,l1),(s2,e2,l2) in zip(x,y)]))
+        assert (all([s1 == s2 and e1 == e2 and l1 == l2 and a1 == a2
+                     for (a1, sents1), (a2, sents2) in zip(doc['ner'].items(), anno['ner'].items())
+                     for x, y in zip(sents1, sents2)
+                     for (s1, e1, l1), (s2, e2, l2) in zip(x, y)]))
 
+
+def dump_table_to_jsonl(
+        ip = '10.1.1.29',
+        table_name='arxiv',
+        dump_file='/tmp/arxiv.jsonl.gz',
+        limit=100
+    ):
+    # ip = 'localhost'
+    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    table = get_tables_by_reflection(sqlalchemy_base.metadata, sqlalchemy_engine)[table_name]
+    q = select([table]).limit(limit)
+    g = (row_to_dict(d) for batch in fetchmany_sqlalchemy(sqlalchemy_engine, q, batch_size=10000) for d in batch)
+    data_io.write_jsons_to_file(dump_file, g)
+
+
+if __name__ == '__main__':
+    # unittest_parse_brat_annotations()
+    dump_table_to_jsonl()
