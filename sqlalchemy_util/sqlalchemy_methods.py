@@ -69,7 +69,7 @@ def insert_or_update_batch(conn, table:Table,columns_to_update, rows:List[Dict],
                       for d in rows_to_update])
 
 def process_table_batchwise(sqlalchemy_engine, q:Query, table:Table,
-                            process_fun:Callable[[Any],List[Dict[str,str]]],
+                            process_batch_fun:Callable[[Any], List[Dict[str, str]]],
                             batch_size=1000,
                             stop_fun=lambda:False,
                             num_processes=0,
@@ -79,13 +79,13 @@ def process_table_batchwise(sqlalchemy_engine, q:Query, table:Table,
     if num_processes>0:
         with sqlalchemy_engine.connect() as conn:
             with Pool(processes=num_processes, initializer=initializer_fun, initargs=initargs) as pool:
-                for processed_batch, dur in iterate_and_time(pool.imap_unordered(process_fun, batch_generator)):
+                for processed_batch, dur in iterate_and_time(pool.imap_unordered(process_batch_fun, batch_generator)):
                     process_time+=dur
                     update_table(conn, processed_batch, table)
 
     else:
         with sqlalchemy_engine.connect() as conn:
-            processed_g = (process_fun(batch) for batch in batch_generator)
+            processed_g = (process_batch_fun(batch) for batch in batch_generator)
             for processed_batch,dur in iterate_and_time(processed_g):
                 process_time += dur
                 update_table(conn, processed_batch, table)
