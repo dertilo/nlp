@@ -20,7 +20,7 @@ def train_model():
     g = sqlalchemy_engine.execute(select([table])
                                   .where(sqlalchemy.or_(table.c.ner.like('%' + annotator_human + '%'),
                                                         table.c.ner.like('%' + annotator_luan + '%'))))
-    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_name=annotator_human)]
+    train_data = [sent for d in g for sent in build_sentences(row_to_dict(d), annotator_names=[annotator_human,annotator_luan])]
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
     print('training on %d samples'%len(train_data))
     if len(train_data)>0:
