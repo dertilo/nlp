@@ -7,7 +7,7 @@ from subprocess import check_output, CalledProcessError, TimeoutExpired
 
 import logging
 
-from getting_data.extract_fulltext_from_pdf import fixunicode
+from getting_data.parsing_pdfs import fixunicode
 
 log = logging.getLogger('fulltext')
 TIMELIMIT = 10*60
