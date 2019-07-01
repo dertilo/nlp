@@ -7,6 +7,7 @@ from typing import Union
 from torch import cuda
 from torch.utils.data import Dataset, DataLoader
 from torch.optim.sgd import SGD
+from torch import nn as nn
 
 import flair
 from flair.data import Dictionary
@@ -210,11 +211,24 @@ class TextCorpus(object):
             shuffle_lines=False,
         )[0]
 
+class LanguageModelWrapper(LanguageModel):
+
+    def forward(self, input, hidden, ordered_sequence_lengths=None,parallel=False):
+        if parallel:
+            input = input.permute(1,0)
+            hidden = tuple([h.permute(1,0,2) for h in hidden])
+        output, rnn_output, hidden = super().forward(input, hidden,ordered_sequence_lengths)
+        if parallel:
+            output = output.permute(1, 0, 2)
+            rnn_output = rnn_output.permute(1, 0, 2)
+            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
+
+        return output,rnn_output,hidden
 
 class LanguageModelTrainer:
     def __init__(
         self,
-        model: LanguageModel,
+        model: LanguageModelWrapper,
         corpus: TextCorpus,
         optimizer: Optimizer = SGD,
         test_mode: bool = False,
@@ -223,7 +237,7 @@ class LanguageModelTrainer:
         loss: float = 10000,
         optimizer_state: dict = None,
     ):
-        self.model: LanguageModel = model
+        self.model: LanguageModelWrapper = model
         self.optimizer: Optimizer = optimizer
         self.corpus: TextCorpus = corpus
         self.test_mode: bool = test_mode
@@ -330,6 +344,8 @@ class LanguageModelTrainer:
                     # reset variables
                     hidden = self.model.init_hidden(mini_batch_size)
 
+                    parallel_model = nn.DataParallel(self.model)
+
                     # not really sure what this does
                     ntokens = len(self.corpus.dictionary)
 
@@ -348,18 +364,27 @@ class LanguageModelTrainer:
                             )
                             raise Exception("data isnt on cuda")
 
-                        self.model.zero_grad()
+                        parallel_model.zero_grad()
                         optimizer.zero_grad()
 
                         # do the forward pass in the model
-                        output, rnn_output, hidden = self.model.forward(data, hidden)
+                        use_dataparallel=True
+                        if use_dataparallel:
+                            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
+                            data = data.permute(1, 0)
+                        output, rnn_output, hidden = parallel_model.forward(data, hidden,parallel=True)
+
+                        if use_dataparallel:
+                            output = output.permute(1,0,2)
+                            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
+
 
                         # try to predict the targets
-                        loss = self.loss_function(output.view(-1, ntokens), targets)
+                        loss = self.loss_function(output.contiguous().view(-1, ntokens), targets)
                         loss.backward()
 
                         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip)
+                        torch.nn.utils.clip_grad_norm_(parallel_model.parameters(), clip)
 
                         optimizer.step()
 
