@@ -69,7 +69,19 @@ class LanguageModel(nn.Module):
     def set_hidden(self, hidden):
         self.hidden = hidden
 
-    def forward(self, input, hidden, ordered_sequence_lengths=None):
+    def forward(self, input, hidden, ordered_sequence_lengths=None,parallel=False):
+        if parallel:
+            input = input.permute(1,0)
+            hidden = tuple([h.permute(1,0,2) for h in hidden])
+        output, rnn_output, hidden = self.forward_(input, hidden,ordered_sequence_lengths)
+        if parallel:
+            output = output.permute(1, 0, 2)
+            rnn_output = rnn_output.permute(1, 0, 2)
+            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
+
+        return output,rnn_output,hidden
+
+    def forward_(self, input, hidden, ordered_sequence_lengths=None):
         encoded = self.encoder(input)
         emb = self.drop(encoded)
 

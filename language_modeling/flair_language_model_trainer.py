@@ -211,24 +211,11 @@ class TextCorpus(object):
             shuffle_lines=False,
         )[0]
 
-class LanguageModelWrapper(LanguageModel):
-
-    def forward(self, input, hidden, ordered_sequence_lengths=None,parallel=False):
-        if parallel:
-            input = input.permute(1,0)
-            hidden = tuple([h.permute(1,0,2) for h in hidden])
-        output, rnn_output, hidden = super().forward(input, hidden,ordered_sequence_lengths)
-        if parallel:
-            output = output.permute(1, 0, 2)
-            rnn_output = rnn_output.permute(1, 0, 2)
-            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
-
-        return output,rnn_output,hidden
 
 class LanguageModelTrainer:
     def __init__(
         self,
-        model: LanguageModelWrapper,
+        model: LanguageModel,
         corpus: TextCorpus,
         optimizer: Optimizer = SGD,
         test_mode: bool = False,
@@ -237,13 +224,13 @@ class LanguageModelTrainer:
         loss: float = 10000,
         optimizer_state: dict = None,
     ):
-        self.model: LanguageModelWrapper = model
+        self.model: LanguageModel = model
         self.optimizer: Optimizer = optimizer
         self.corpus: TextCorpus = corpus
         self.test_mode: bool = test_mode
 
         self.loss_function = torch.nn.CrossEntropyLoss()
-        self.log_interval = 100
+        self.log_interval = 1000
         self.num_workers = 2
         self.epoch = epoch
         self.split = split
