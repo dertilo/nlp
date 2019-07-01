@@ -2,21 +2,25 @@
 # (Strongly inspired by original Google BERT code and Hugging Face's code)
 
 """ Pretrain transformer with Masked LM and Sentence Classification """
-
+import json
+import sys
 from random import randint, shuffle
 from random import random as rand
+from typing import NamedTuple
+
 import fire
 
 import torch
 import torch.nn as nn
+from commons import data_io
 from tensorboardX import SummaryWriter
 
-import tokenization
-import selfattention_encoder
-import optim
-import training
+import pytorchic_bert.tokenization as tokenization
+import pytorchic_bert.selfattention_encoder as selfattention_encoder
+import pytorchic_bert.optim as optim
+from pytorch_util import pytorch_methods
 
-from utils import set_seeds, get_device, get_random_word, truncate_tokens_pair
+from pytorchic_bert.utils import set_seeds, get_random_word, truncate_tokens_pair
 
 # Input file format :
 # 1. One sentence per line. These should ideally be actual sentences,
@@ -162,8 +166,25 @@ class Preprocess4Pretrain(Pipeline):
         return (input_ids, segment_ids, input_mask, masked_ids, masked_pos, masked_weights, is_next)
 
 
+class TrainConfig(NamedTuple):
+    """ Hyperparameters for training """
+    seed: int = 42 # random seed
+    batch_size: int = 32
+    lr: float = 2e-5 # learning rate
+    n_epochs: int = 10 # the number of epoch
+    tol:float = 0
+    patience:int = 3
+    # `warm up` period = warmup(0.1)*total_steps
+    # linearly increasing learning rate from zero to the specified value(5e-5)
+    warmup: float = 0.1
+    total_steps: int = batch_size*n_epochs # total number of steps to train
+
+    @classmethod
+    def from_json(cls, file): # load config from json file
+        return cls(**json.load(open(file, "r")))
+
 class BertModel4Pretrain(nn.Module):
-    "Bert Model for Pretrain : Masked LM and next sentence classification"
+
     def __init__(self, cfg):
         super().__init__()
         self.transformer = selfattention_encoder.EncoderStack(cfg)
@@ -171,7 +192,7 @@ class BertModel4Pretrain(nn.Module):
         self.activ1 = nn.Tanh()
         self.linear = nn.Linear(cfg.dim, cfg.dim)
         self.activ2 = selfattention_encoder.gelu
-        self.norm = selfattention_encoder.LayerNorm(cfg)
+        self.norm = selfattention_encoder.LayerNorm(cfg.dim)
         self.classifier = nn.Linear(cfg.dim, 2)
         # decoder is shared with embedding layer
         embed_weight = self.transformer.embed.tok_embed.weight
@@ -192,20 +213,13 @@ class BertModel4Pretrain(nn.Module):
         return logits_lm, logits_clsf
 
 
-def main(train_cfg='config/pretrain.json',
-         model_cfg='config/bert_base.json',
-         data_file='../tbc/books_large_all.txt',
-         model_file=None,
-         data_parallel=True,
+def main(
          vocab='../uncased_L-12_H-768_A-12/vocab.txt',
-         save_dir='../exp/bert/pretrain',
-         log_dir='../exp/bert/pretrain/runs',
-         max_len=512,
+         max_len=16,
          max_pred=20,
          mask_prob=0.15):
 
-    cfg = training.Config.from_json(train_cfg)
-    model_cfg = selfattention_encoder.Config.from_json(model_cfg)
+    cfg = TrainConfig(n_epochs=2)
 
     set_seeds(cfg.seed)
 
@@ -222,34 +236,55 @@ def main(train_cfg='config/pretrain.json',
                                    tokenize,
                                    max_len,
                                    pipeline=pipeline)
+    model_cfg = selfattention_encoder.BertConfig(dim=16,n_layers=2,n_heads=2,dim_ff=16*4,max_len=16,vocab_size=len(tokenizer.vocab.keys()))
+
 
     model = BertModel4Pretrain(model_cfg)
     criterion1 = nn.CrossEntropyLoss(reduction='none')
     criterion2 = nn.CrossEntropyLoss()
 
     optimizer = optim.optim4GPU(cfg, model)
-    trainer = training.Trainer(cfg, model, data_iter, optimizer, save_dir, get_device())
 
-    writer = SummaryWriter(log_dir=log_dir) # for tensorboardX
-
-    def get_loss(model, batch, global_step): # make sure loss is tensor
+    def loss_fun(model, batch): # make sure loss is tensor
         input_ids, segment_ids, input_mask, masked_ids, masked_pos, masked_weights, is_next = batch
 
         logits_lm, logits_clsf = model(input_ids, segment_ids, input_mask, masked_pos)
         loss_lm = criterion1(logits_lm.transpose(1, 2), masked_ids) # for masked LM
         loss_lm = (loss_lm*masked_weights.float()).mean()
         loss_clsf = criterion2(logits_clsf, is_next) # for sentence classification
-        writer.add_scalars('data/scalar_group',
-                           {'loss_lm': loss_lm.item(),
-                            'loss_clsf': loss_clsf.item(),
-                            'loss_total': (loss_lm + loss_clsf).item(),
-                            'lr': optimizer.get_lr()[0],
-                           },
-                           global_step)
         return loss_lm + loss_clsf
 
-    trainer.train(get_loss, model_file, None, data_parallel)
+    batch_counter=[0]
+    def train_on_batch(batch):
+        batch_counter[0]+=1
+        sys.stdout.write('\rbatch: %d'%batch_counter[0])
+        optimizer.zero_grad()
+        loss = loss_fun(model,batch).mean()  # mean() for Data Parallelism
+        loss.backward()
+        optimizer.step()
+        return loss.item()
 
+    pytorch_methods.train(train_on_batch,
+                          data_iter,
+                          cfg.n_epochs,
+                          tol=cfg.tol,
+                          patience=cfg.patience,
+                          verbose=True)
 
 if __name__ == '__main__':
+    path = '/home/tilo/data'
+    data_path = path+'/ml_nlp_parsed'
+    lines_g = data_io.read_lines_from_files(data_path,limit=100)
+    def line_generator():
+        line_len=100
+        c=0
+        for k,line in enumerate(lines_g):
+            for s in range(0,len(line)-line_len,line_len):
+                yield line[s:(s+line_len)].replace('\n','')
+                c+=1
+                if c%10==0:
+                    yield '\n'
+
+    data_io.write_to_file('/tmp/text.txt',line_generator())
+    data_file = '/tmp/text.txt'
     fire.Fire(main)
