@@ -4,7 +4,7 @@ services:
     image: postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: whocares
+      POSTGRES_PASSWORD: postgres
     volumes:
       - /home/tilo/data/postgres-data:/var/lib/postgresql/data
     ports:
