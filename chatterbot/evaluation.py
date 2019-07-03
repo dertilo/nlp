@@ -62,7 +62,7 @@ class GreedySearchDecoder(nn.Module):
             decoder_input = torch.unsqueeze(decoder_input, 0)
         return all_tokens, all_scores
 
-def evaluate(encoder, decoder, searcher, voc, sentence, max_length=MAX_LENGTH):
+def evaluate(searcher, voc, sentence, max_length=MAX_LENGTH):
     indexes_batch = [indexesFromSentence(voc, sentence)]
     lengths = torch.tensor([len(indexes) for indexes in indexes_batch])
     input_batch = torch.LongTensor(indexes_batch).transpose(0, 1)
@@ -73,18 +73,15 @@ def evaluate(encoder, decoder, searcher, voc, sentence, max_length=MAX_LENGTH):
     return decoded_words
 
 
-def interactive_chat(encoder, decoder, searcher, voc):
+def interactive_chat(searcher, voc):
 
     while(1):
         try:
-            # Get input sentence
             input_sentence = input('> ')
-            # Check if it is quit case
             if input_sentence == 'q' or input_sentence == 'quit': break
-            # Normalize sentence
             input_sentence = normalizeString(input_sentence)
             # Evaluate sentence
-            output_words = evaluate(encoder, decoder, searcher, voc, input_sentence)
+            output_words = evaluate(searcher, voc, input_sentence)
             # Format and print response sentence
             output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
             print('Bot:', ' '.join(output_words))

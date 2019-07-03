@@ -20,6 +20,7 @@ from __future__ import unicode_literals
 
 import sys
 sys.path.append('.')
+from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
 from chatterbot.evaluation import GreedySearchDecoder, interactive_chat
 from chatterbot.models import EncoderRNN, LuongAttnDecoderRNN
@@ -30,12 +31,13 @@ from torch import optim
 import random
 
 from chatterbot.getting_processing_data import loadPrepareData, batch2TrainData, corpus_name, \
-    save_dir
+    save_dir, load_prepare_keyword_sentence_data
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
 
-voc,pairs = loadPrepareData()
+voc,pairs,process_batch_fun = loadPrepareData()
+# voc,pairs,process_batch_fun = load_prepare_keyword_sentence_data('/tmp/keywords_to_sentence.csv')
 
 model_name = 'cb_model'
 attn_model = 'dot'
@@ -81,10 +83,10 @@ def prepare_model(loadFilename,voc):
 
 encoder,decoder,checkpoint = prepare_model(loadFilename,voc)
 
-trainIters(model_name, voc, pairs, encoder, decoder,
+trainIters(model_name, voc, pairs,process_batch_fun, encoder, decoder,
            save_dir,
            corpus_name=corpus_name,
-           n_iteration=4000,
+           n_iteration=500,
            loadFilename=loadFilename,checkpoint=checkpoint
            )
 
@@ -93,4 +95,4 @@ decoder.eval()
 
 searcher = GreedySearchDecoder(encoder, decoder)
 
-interactive_chat(encoder, decoder, searcher, voc)
+interactive_chat(searcher, voc)

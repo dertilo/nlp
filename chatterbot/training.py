@@ -14,7 +14,7 @@ from io import open
 import itertools
 import math
 
-from chatterbot.getting_processing_data import SOS_token, MAX_LENGTH, batch2TrainData
+from chatterbot.getting_processing_data import SOS_token, MAX_LENGTH
 from chatterbot.models import EncoderRNN, LuongAttnDecoderRNN
 
 USE_CUDA = torch.cuda.is_available()
@@ -106,7 +106,7 @@ def maskNLLLoss(inp, target, mask):
 #
 teacher_forcing_ratio = 1.0
 
-def trainIters(model_name, voc, pairs, encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
+def trainIters(model_name, voc, pairs, batch2TrainData,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
                corpus_name,
                batch_size=64,
                clip = 50.0,

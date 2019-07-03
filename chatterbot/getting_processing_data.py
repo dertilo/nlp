@@ -1,8 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
+from commons import data_io
 import torch
 from torch.jit import script, trace
 import torch.nn as nn
@@ -136,35 +132,35 @@ def extractSentencePairs(conversations):
 # Now we’ll call these functions and create the file. We’ll call it
 # *formatted_movie_lines.txt*.
 #
-
-# Define path to new file
-datafile = os.path.join(corpus, "formatted_movie_lines.txt")
-
-delimiter = '\t'
-# Unescape the delimiter
-delimiter = str(codecs.decode(delimiter, "unicode_escape"))
-
-# Initialize lines dict, conversations list, and field ids
-MOVIE_LINES_FIELDS = ["lineID", "characterID", "movieID", "character", "text"]
-MOVIE_CONVERSATIONS_FIELDS = ["character1ID", "character2ID", "movieID", "utteranceIDs"]
-
-# Load lines and process conversations
-print("\nProcessing corpus...")
-lines = loadLines(os.path.join(corpus, "movie_lines.txt"), MOVIE_LINES_FIELDS)
-print("\nLoading conversations...")
-conversations = loadConversations(os.path.join(corpus, "movie_conversations.txt"),
-                                  lines, MOVIE_CONVERSATIONS_FIELDS)
-
-# Write new csv file
-print("\nWriting newly formatted file...")
-with open(datafile, 'w', encoding='utf-8') as outputfile:
-    writer = csv.writer(outputfile, delimiter=delimiter, lineterminator='\n')
-    for pair in extractSentencePairs(conversations):
-        writer.writerow(pair)
-
-# Print a sample of lines
-print("\nSample lines from file:")
-printLines(datafile)
+#
+# # Define path to new file
+# datafile = os.path.join(corpus, "formatted_movie_lines.txt")
+#
+# delimiter = '\t'
+# # Unescape the delimiter
+# delimiter = str(codecs.decode(delimiter, "unicode_escape"))
+#
+# # Initialize lines dict, conversations list, and field ids
+# MOVIE_LINES_FIELDS = ["lineID", "characterID", "movieID", "character", "text"]
+# MOVIE_CONVERSATIONS_FIELDS = ["character1ID", "character2ID", "movieID", "utteranceIDs"]
+#
+# # Load lines and process conversations
+# print("\nProcessing corpus...")
+# lines = loadLines(os.path.join(corpus, "movie_lines.txt"), MOVIE_LINES_FIELDS)
+# print("\nLoading conversations...")
+# conversations = loadConversations(os.path.join(corpus, "movie_conversations.txt"),
+#                                   lines, MOVIE_CONVERSATIONS_FIELDS)
+#
+# # Write new csv file
+# print("\nWriting newly formatted file...")
+# with open(datafile, 'w', encoding='utf-8') as outputfile:
+#     writer = csv.writer(outputfile, delimiter=delimiter, lineterminator='\n')
+#     for pair in extractSentencePairs(conversations):
+#         writer.writerow(pair)
+#
+# # Print a sample of lines
+# print("\nSample lines from file:")
+# printLines(datafile)
 
 
 ######################################################################
@@ -191,15 +187,16 @@ printLines(datafile)
 PAD_token = 0  # Used for padding short sentences
 SOS_token = 1  # Start-of-sentence token
 EOS_token = 2  # End-of-sentence token
+UNK_token = 3  # End-of-sentence token
 
 class Voc:
     def __init__(self, name):
         self.name = name
         self.trimmed = False
-        self.word2index = {}
         self.word2count = {}
-        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS"}
-        self.num_words = 3  # Count SOS, EOS, PAD
+        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS",UNK_token:'#'}
+        self.word2index = {word:idx for idx,word in self.index2word.items()}
+        self.num_words = 4  # Count SOS, EOS, PAD
 
     def addSentence(self, sentence):
         for word in sentence.split(' '):
@@ -230,11 +227,10 @@ class Voc:
             len(keep_words), len(self.word2index), len(keep_words) / len(self.word2index)
         ))
 
-        # Reinitialize dictionaries
-        self.word2index = {}
         self.word2count = {}
-        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS"}
-        self.num_words = 3 # Count default tokens
+        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS",UNK_token:'#'}
+        self.word2index = {word:idx for idx,word in self.index2word.items()}
+        self.num_words = 4 # Count default tokens
 
         for word in keep_words:
             self.addWord(word)
@@ -273,11 +269,9 @@ def normalizeString(s):
 
 # Read query/response pairs and return a voc object
 def readVocs(datafile, corpus_name):
-    print("Reading lines...")
-    # Read the file and split into lines
     lines = open(datafile, encoding='utf-8').\
         read().strip().split('\n')
-    # Split every line into pairs and normalize
+
     pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
     voc = Voc(corpus_name)
     return voc, pairs
@@ -291,7 +285,16 @@ def filterPair(p):
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
-# Using the functions defined above, return a populated voc object and pairs list
+def batch2TrainData(voc:Voc, pair_batch,tokenize_fun=lambda x:x.split(' ')):
+    pair_batch.sort(key=lambda x: len(tokenize_fun(x[0])), reverse=True)
+    input_batch, output_batch = [], []
+    for pair in pair_batch:
+        input_batch.append(pair[0])
+        output_batch.append(pair[1])
+    inp, lengths = inputVar(input_batch, voc,tokenize_fun)
+    output, mask, max_target_len = outputVar(output_batch, voc,tokenize_fun)
+    return inp, lengths, output, mask, max_target_len
+
 def loadPrepareData(corpus_name = "cornell movie-dialogs corpus",
                     datafile = os.path.join(corpus, "formatted_movie_lines.txt")
                     ):
@@ -311,7 +314,36 @@ def loadPrepareData(corpus_name = "cornell movie-dialogs corpus",
         print(pair)
 
     pairs = trimRareWords(voc, pairs, MIN_COUNT)
-    return voc, pairs
+    def batch2TrainData_fun(voc,pair_batch):
+        return batch2TrainData(voc,pair_batch)
+    return voc, pairs,batch2TrainData_fun
+
+def load_prepare_keyword_sentence_data(
+        datafile:str
+                    ):
+    corpus_name = "sci-keyword-sentencs"
+    data_g = data_io.read_jsons_from_file(datafile,limit=100)
+    voc = Voc(corpus_name)
+    [voc.addWord(char) for d in data_g for char in d['sentence']]
+    voc.trim(100)
+    assert '#' in voc.word2index.keys()
+    print("Counted words:", voc.num_words)
+    # def infinite_data_g():
+    #     while True:
+    #         for d in data_io.read_jsons_from_file(datafile):
+    #             yield d
+
+    def normalizeString(s):
+        s = re.sub(r"\s+", r" ", s).strip()
+        s = ''.join([c if c in voc.word2index else voc.index2word[UNK_token] for c in s])
+        return s
+
+    pairs = [(normalizeString(' '.join(d['keywords'])),normalizeString(d['sentence'])) for d in data_io.read_jsons_from_file(datafile)]
+
+    def batch2TrainData_fun(voc,pair_batch):
+        return batch2TrainData(voc,pair_batch,lambda s:list(s))
+
+    return voc, pairs,batch2TrainData_fun
 
 
 ######################################################################
@@ -414,8 +446,8 @@ def trimRareWords(voc, pairs, MIN_COUNT):
 # and target tensors using the aforementioned functions.
 #
 
-def indexesFromSentence(voc, sentence):
-    return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_token]
+def indexesFromSentence(voc, sentence,tokenize_fun=lambda x:x.split(' ')):
+    return [voc.word2index[word] for word in tokenize_fun(sentence)] + [EOS_token]
 
 
 def zeroPadding(l, fillvalue=PAD_token):
@@ -433,16 +465,16 @@ def binaryMatrix(l, value=PAD_token):
     return m
 
 # Returns padded input sequence tensor and lengths
-def inputVar(l, voc):
-    indexes_batch = [indexesFromSentence(voc, sentence) for sentence in l]
+def inputVar(l, voc,tokenize_fun):
+    indexes_batch = [indexesFromSentence(voc, sentence,tokenize_fun) for sentence in l]
     lengths = torch.tensor([len(indexes) for indexes in indexes_batch])
     padList = zeroPadding(indexes_batch)
     padVar = torch.LongTensor(padList)
     return padVar, lengths
 
 # Returns padded target sequence tensor, padding mask, and max target length
-def outputVar(l, voc):
-    indexes_batch = [indexesFromSentence(voc, sentence) for sentence in l]
+def outputVar(l, voc,tokenize_fun):
+    indexes_batch = [indexesFromSentence(voc, sentence,tokenize_fun) for sentence in l]
     max_target_len = max([len(indexes) for indexes in indexes_batch])
     padList = zeroPadding(indexes_batch)
     mask = binaryMatrix(padList)
@@ -450,16 +482,8 @@ def outputVar(l, voc):
     padVar = torch.LongTensor(padList)
     return padVar, mask, max_target_len
 
-# Returns all items for a given batch of pairs
-def batch2TrainData(voc, pair_batch):
-    pair_batch.sort(key=lambda x: len(x[0].split(" ")), reverse=True)
-    input_batch, output_batch = [], []
-    for pair in pair_batch:
-        input_batch.append(pair[0])
-        output_batch.append(pair[1])
-    inp, lengths = inputVar(input_batch, voc)
-    output, mask, max_target_len = outputVar(output_batch, voc)
-    return inp, lengths, output, mask, max_target_len
 
-
-
+if __name__ == '__main__':
+    # voc, pairs = loadPrepareData()
+    load_prepare_keyword_sentence_data('/tmp/keywords_to_sentence.csv')
+    print()
