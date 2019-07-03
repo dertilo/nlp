@@ -61,8 +61,6 @@ def prepare_model(loadFilename,voc):
         embedding_sd = checkpoint['embedding']
         voc.__dict__ = checkpoint['voc_dict']
     else:
-        encoder_optimizer_sd=None
-        decoder_optimizer_sd=None
         checkpoint = None
 
     print('Building encoder and decoder ...')
@@ -78,12 +76,12 @@ def prepare_model(loadFilename,voc):
 
     encoder = encoder.to(device)
     decoder = decoder.to(device)
-    return encoder,decoder,checkpoint,encoder_optimizer_sd, decoder_optimizer_sd, embedding
+    return encoder,decoder,checkpoint
 
 
-encoder,decoder,checkpoint,encoder_optimizer_sd, decoder_optimizer_sd, embedding = prepare_model(loadFilename,voc)
+encoder,decoder,checkpoint = prepare_model(loadFilename,voc)
 
-trainIters(model_name, voc, pairs, encoder, decoder, embedding,
+trainIters(model_name, voc, pairs, encoder, decoder,
            save_dir,
            corpus_name=corpus_name,
            n_iteration=4000,
