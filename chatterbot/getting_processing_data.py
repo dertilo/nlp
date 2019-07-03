@@ -17,6 +17,17 @@ import codecs
 from io import open
 import itertools
 import math
+
+######################################################################
+# Preparations
+# ------------
+#
+# To start, Download the data ZIP file
+# `here <https://www.cs.cornell.edu/~cristian/Cornell_Movie-Dialogs_Corpus.html>`__
+# and put in a ``data/`` directory under the current directory.
+#
+# After that, let’s import some necessities.
+
 ######################################################################
 # Load & Preprocess Data
 # ----------------------
