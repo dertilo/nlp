@@ -1,4 +1,4 @@
-from commons import data_io
+from commons import data_io, util_methods
 import torch
 from torch.jit import script, trace
 import torch.nn as nn
@@ -49,16 +49,6 @@ base_path = 'chatterbot'
 corpus_name = "cornell movie-dialogs corpus"
 corpus = os.path.join(base_path+"/data", corpus_name)
 save_dir = os.path.join(base_path+"/data", "save")
-
-
-def printLines(file, n=10):
-    with open(file, 'rb') as datafile:
-        lines = datafile.readlines()
-    for line in lines[:n]:
-        print(line)
-
-printLines(os.path.join(corpus, "movie_lines.txt"))
-
 
 def loadLines(fileName, fields):
     lines = {}
@@ -192,12 +182,9 @@ def filterPairs(pairs):
 
 def batch2TrainData(voc:Voc, pair_batch,tokenize_fun=lambda x:x.split(' ')):
     pair_batch.sort(key=lambda x: len(tokenize_fun(x[0])), reverse=True)
-    input_batch, output_batch = [], []
-    for pair in pair_batch:
-        input_batch.append(pair[0])
-        output_batch.append(pair[1])
-    inp, lengths = inputVar(input_batch, voc,tokenize_fun)
-    output, mask, max_target_len = outputVar(output_batch, voc,tokenize_fun)
+
+    inp, lengths = inputVar([inn for inn,out in pair_batch], voc,tokenize_fun)
+    output, mask, max_target_len = outputVar([out for inn,out in pair_batch], voc,tokenize_fun)
     return inp, lengths, output, mask, max_target_len
 
 def loadPrepareData(corpus_name = "cornell movie-dialogs corpus",
@@ -296,6 +283,19 @@ def binaryMatrix(l, value=PAD_token):
             else:
                 m[i].append(1)
     return m
+
+# max_len = 50
+# for k in range(len(indexes_batch)):
+#     if len(indexes_batch[k]) < max_len:
+#         n_pad = max_len - len(indexes_batch[k])
+#         indexes_batch[k].extend([PAD_token] * n_pad)
+#     else:
+#         indexes_batch[k] = indexes_batch[k][:max_len]
+#         lengths[k] = max_len
+# padList = indexes_batch
+# # padList = zeroPadding(indexes_batch)
+# padVar = torch.LongTensor(padList).permute(1, 0)
+
 
 def inputVar(l, voc,tokenize_fun):
     indexes_batch = [indexesFromSentence(voc, sentence,tokenize_fun) for sentence in l]

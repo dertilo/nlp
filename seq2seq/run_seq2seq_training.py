@@ -22,9 +22,10 @@ import sys
 sys.path.append('.')
 from scipy.sparse import csr_matrix #TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found
 
+from seq2seq.seq2seq_dataprocessor import Seq2GapDataProcessor
 from seq2seq.evaluation import GreedySearchDecoder, interactive_chat
-from seq2seq.models import EncoderRNN, LuongAttnDecoderRNN
-from seq2seq.training import trainIters
+from seq2seq.seq2seq_models import EncoderRNN, LuongAttnDecoderRNN
+from seq2seq.seq2seq_training import trainIters
 import torch
 import torch.nn as nn
 from torch import optim
@@ -37,15 +38,23 @@ USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
 
 # voc,pairs,process_batch_fun,normalizeString_fun = loadPrepareData()
-voc,pairs,process_batch_fun,normalizeString_fun = load_prepare_keyword_sentence_data('../data/keywords_to_sentence.jsonl.gz',limit=10000000)
+# datafile = '../data/keywords_to_sentence.jsonl.gz'
+# datafile = '/tmp/keywords_to_sentence.jsonl.gz'
+# voc,pairs,process_batch_fun,normalizeString_fun = load_prepare_keyword_sentence_data(datafile, limit=100000000)
+
+# data_path = '/home/tilo/gunther/arxiv_papers/ml_nlp_parsed'
+data_path = '../data/ml_nlp_parsed'
+dp = Seq2GapDataProcessor()
+dp.fit(data_path)
+voc = dp.voc
 
 model_name = 'cb_model'
 attn_model = 'dot'
 #attn_model = 'general'
 #attn_model = 'concat'
-hidden_size = 500
-encoder_n_layers = 2
-decoder_n_layers = 2
+hidden_size = 512
+encoder_n_layers = 1
+decoder_n_layers = 1
 dropout = 0.1
 batch_size = 64
 
@@ -83,11 +92,13 @@ def prepare_model(loadFilename,voc):
 
 encoder,decoder,checkpoint = prepare_model(loadFilename,voc)
 
-trainIters(model_name, voc, pairs,process_batch_fun, normalizeString_fun,encoder, decoder,
+trainIters(model_name,dp,data_path, encoder, decoder,
            save_dir,
+           learning_rate=0.001,
+           decoder_learning_ratio=1.0,
            corpus_name=corpus_name,
            n_iteration=5000,
-           print_every=100,
+           print_every=200,
            loadFilename=loadFilename,
            checkpoint=checkpoint
            )
@@ -96,4 +107,4 @@ encoder.eval()
 decoder.eval()
 searcher = GreedySearchDecoder(encoder, decoder)
 
-interactive_chat(searcher, voc,normalizeString_fun)
+# interactive_chat(searcher, voc,normalizeString_fun)

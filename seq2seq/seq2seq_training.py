@@ -14,9 +14,13 @@ from io import open
 import itertools
 import math
 
+from torch.nn import DataParallel
+
 from seq2seq.evaluation import evaluate, GreedySearchDecoder
-from seq2seq.getting_processing_data import SOS_token
-from seq2seq.models import EncoderRNN, LuongAttnDecoderRNN
+from seq2seq.getting_processing_data import SOS_token, MAX_LENGTH
+from seq2seq.seq2seq_dataprocessor import GAP
+from seq2seq.seq2seq_models import EncoderRNN, LuongAttnDecoderRNN
+from text_classification.classifiers.common import DataProcessorInterface
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -105,9 +109,9 @@ def maskNLLLoss(inp, target, mask):
 #   sequential models can be very straightforward.
 #
 #
-teacher_forcing_ratio = 1.0
+teacher_forcing_ratio = .5
 
-def trainIters(model_name, voc, pairs, batch2TrainData,normalizeString_fun,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
+def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
                corpus_name,
                batch_size=64,
                clip = 50.0,
@@ -188,9 +192,9 @@ def trainIters(model_name, voc, pairs, batch2TrainData,normalizeString_fun,encod
         decoder_optimizer.step()
 
         return sum(print_losses) / n_totals
-
+    get_batch_fun = dp.build_get_batch_fun(data_path,batch_size=batch_size)
     for iteration in range(n_iteration + 1):
-        training_batch = batch2TrainData(voc, [random.choice(pairs) for _ in range(batch_size)])
+        training_batch = get_batch_fun()
 
         loss = train_on_batch(training_batch)
         print_loss += loss
@@ -202,11 +206,15 @@ def trainIters(model_name, voc, pairs, batch2TrainData,normalizeString_fun,encod
             encoder.eval()
             decoder.eval()
             searcher = GreedySearchDecoder(encoder, decoder)
-            for input_sentence in ['Embedding Matrix', 'Measure Evaluation','Deep Learning Machine']:
-                input_sentence = normalizeString_fun(input_sentence)
-                output_words = evaluate(searcher, voc, input_sentence,max_length=100)
-                output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
-                print('Input: %s; Bot: %s'%(input_sentence,''.join(output_words)))
+            for input_sentence in ['The Embedd%strix'%GAP, 'evaluati%sric'%GAP,'Dee%sarning'%GAP]:
+                input_batch, lengths = dp.transform([input_sentence])
+                input_batch = input_batch.to(device)
+                lengths = lengths.to(device)
+
+                tokens, scores = searcher(input_batch, lengths, MAX_LENGTH)
+                decoded_words = [dp.voc.index2word[token.item()] for token in tokens]
+                decoded_words = [x for x in decoded_words if not (x == 'EOS' or x == 'PAD')]
+                print('Input: %s; Bot: %s'%(input_sentence,''.join(decoded_words)))
 
             encoder.train()
             decoder.train()
@@ -222,6 +230,6 @@ def trainIters(model_name, voc, pairs, batch2TrainData,normalizeString_fun,encod
                 'en_opt': encoder_optimizer.state_dict(),
                 'de_opt': decoder_optimizer.state_dict(),
                 'loss': loss,
-                'voc_dict': voc.__dict__,
+                'voc_dict': dp.voc.__dict__,
                 'embedding': encoder.embedding.state_dict()
             }, os.path.join(directory, '{}_{}.tar'.format(iteration, 'checkpoint')))
