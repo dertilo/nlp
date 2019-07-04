@@ -31,7 +31,7 @@ import torch.nn as nn
 #        d) Prepare current token to be next decoder input.
 #    6) Return collections of word tokens and scores.
 #
-from chatterbot.getting_processing_data import MAX_LENGTH, indexesFromSentence, normalizeString, SOS_token
+from seq2seq.getting_processing_data import MAX_LENGTH, indexesFromSentence, SOS_token
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -73,18 +73,16 @@ def evaluate(searcher, voc, sentence, max_length=MAX_LENGTH):
     return decoded_words
 
 
-def interactive_chat(searcher, voc):
+def interactive_chat(searcher, voc,normalizeString_fun):
 
     while(1):
-        try:
-            input_sentence = input('> ')
-            if input_sentence == 'q' or input_sentence == 'quit': break
-            input_sentence = normalizeString(input_sentence)
-            # Evaluate sentence
-            output_words = evaluate(searcher, voc, input_sentence)
-            # Format and print response sentence
-            output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
-            print('Bot:', ' '.join(output_words))
+        # try:
+        input_sentence = input('> ')
+        if input_sentence == 'q' or input_sentence == 'quit': break
+        input_sentence = normalizeString_fun(input_sentence)
+        output_words = evaluate(searcher, voc, input_sentence)
+        output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
+        print('Bot:', ''.join(output_words))
 
-        except KeyError:
-            print("Error: Encountered unknown word.")
+        # except KeyError:
+        #     print("Error: Encountered unknown word.")

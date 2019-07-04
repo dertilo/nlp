@@ -40,12 +40,10 @@ import math
 # -  9,035 characters from 617 movies
 # -  304,713 total utterances
 #
-# This dataset is large and diverse, and there is a great variation of
+# This dataset is large TODO(tilo):"large"? thefaq! this tiny!
+# and diverse, and there is a great variation of
 # language formality, time periods, sentiment, etc. Our hope is that this
 # diversity makes our model robust to many forms of inputs and queries.
-#
-# First, we’ll take a look at some lines of our datafile to see the
-# original format.
 
 base_path = 'chatterbot'
 corpus_name = "cornell movie-dialogs corpus"
@@ -62,25 +60,6 @@ def printLines(file, n=10):
 printLines(os.path.join(corpus, "movie_lines.txt"))
 
 
-######################################################################
-# Create formatted data file
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# For convenience, we'll create a nicely formatted data file in which each line
-# contains a tab-separated *query sentence* and a *response sentence* pair.
-#
-# The following functions facilitate the parsing of the raw
-# *movie_lines.txt* data file.
-#
-# -  ``loadLines`` splits each line of the file into a dictionary of
-#    fields (lineID, characterID, movieID, character, text)
-# -  ``loadConversations`` groups fields of lines from ``loadLines`` into
-#    conversations based on *movie_conversations.txt*
-# -  ``extractSentencePairs`` extracts pairs of sentences from
-#    conversations
-#
-
-# Splits each line of the file into a dictionary of fields
 def loadLines(fileName, fields):
     lines = {}
     with open(fileName, 'r', encoding='iso-8859-1') as f:
@@ -127,61 +106,6 @@ def extractSentencePairs(conversations):
                 qa_pairs.append([inputLine, targetLine])
     return qa_pairs
 
-
-######################################################################
-# Now we’ll call these functions and create the file. We’ll call it
-# *formatted_movie_lines.txt*.
-#
-#
-# # Define path to new file
-# datafile = os.path.join(corpus, "formatted_movie_lines.txt")
-#
-# delimiter = '\t'
-# # Unescape the delimiter
-# delimiter = str(codecs.decode(delimiter, "unicode_escape"))
-#
-# # Initialize lines dict, conversations list, and field ids
-# MOVIE_LINES_FIELDS = ["lineID", "characterID", "movieID", "character", "text"]
-# MOVIE_CONVERSATIONS_FIELDS = ["character1ID", "character2ID", "movieID", "utteranceIDs"]
-#
-# # Load lines and process conversations
-# print("\nProcessing corpus...")
-# lines = loadLines(os.path.join(corpus, "movie_lines.txt"), MOVIE_LINES_FIELDS)
-# print("\nLoading conversations...")
-# conversations = loadConversations(os.path.join(corpus, "movie_conversations.txt"),
-#                                   lines, MOVIE_CONVERSATIONS_FIELDS)
-#
-# # Write new csv file
-# print("\nWriting newly formatted file...")
-# with open(datafile, 'w', encoding='utf-8') as outputfile:
-#     writer = csv.writer(outputfile, delimiter=delimiter, lineterminator='\n')
-#     for pair in extractSentencePairs(conversations):
-#         writer.writerow(pair)
-#
-# # Print a sample of lines
-# print("\nSample lines from file:")
-# printLines(datafile)
-
-
-######################################################################
-# Load and trim data
-# ~~~~~~~~~~~~~~~~~~
-#
-# Our next order of business is to create a vocabulary and load
-# query/response sentence pairs into memory.
-#
-# Note that we are dealing with sequences of **words**, which do not have
-# an implicit mapping to a discrete numerical space. Thus, we must create
-# one by mapping each unique word that we encounter in our dataset to an
-# index value.
-#
-# For this we define a ``Voc`` class, which keeps a mapping from words to
-# indexes, a reverse mapping of indexes to words, a count of each word and
-# a total word count. The class provides methods for adding a word to the
-# vocabulary (``addWord``), adding all words in a sentence
-# (``addSentence``) and trimming infrequently seen words (``trim``). More
-# on trimming later.
-#
 
 # Default word tokens
 PAD_token = 0  # Used for padding short sentences
@@ -235,20 +159,6 @@ class Voc:
         for word in keep_words:
             self.addWord(word)
 
-
-######################################################################
-# Now we can assemble our vocabulary and query/response sentence pairs.
-# Before we are ready to use this data, we must perform some
-# preprocessing.
-#
-# First, we must convert the Unicode strings to ASCII using
-# ``unicodeToAscii``. Next, we should convert all letters to lowercase and
-# trim all non-letter characters except for basic punctuation
-# (``normalizeString``). Finally, to aid in training convergence, we will
-# filter out sentences with length greater than the ``MAX_LENGTH``
-# threshold (``filterPairs``).
-#
-
 MAX_LENGTH = 10  # Maximum sentence length to consider
 
 # Turn a Unicode string to plain ASCII, thanks to
@@ -259,7 +169,6 @@ def unicodeToAscii(s):
         if unicodedata.category(c) != 'Mn'
     )
 
-# Lowercase, trim, and remove non-letter characters
 def normalizeString(s):
     s = unicodeToAscii(s.lower().strip())
     s = re.sub(r"([.!?])", r" \1", s)
@@ -267,7 +176,6 @@ def normalizeString(s):
     s = re.sub(r"\s+", r" ", s).strip()
     return s
 
-# Read query/response pairs and return a voc object
 def readVocs(datafile, corpus_name):
     lines = open(datafile, encoding='utf-8').\
         read().strip().split('\n')
@@ -276,12 +184,9 @@ def readVocs(datafile, corpus_name):
     voc = Voc(corpus_name)
     return voc, pairs
 
-# Returns True iff both sentences in a pair 'p' are under the MAX_LENGTH threshold
 def filterPair(p):
-    # Input sequences need to preserve the last word for EOS token
     return len(p[0].split(' ')) < MAX_LENGTH and len(p[1].split(' ')) < MAX_LENGTH
 
-# Filter pairs using filterPair condition
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
@@ -316,16 +221,17 @@ def loadPrepareData(corpus_name = "cornell movie-dialogs corpus",
     pairs = trimRareWords(voc, pairs, MIN_COUNT)
     def batch2TrainData_fun(voc,pair_batch):
         return batch2TrainData(voc,pair_batch)
-    return voc, pairs,batch2TrainData_fun
+    return voc, pairs,batch2TrainData_fun,normalizeString
 
 def load_prepare_keyword_sentence_data(
-        datafile:str
+        datafile:str,
+        limit=100
                     ):
     corpus_name = "sci-keyword-sentencs"
     data_g = data_io.read_jsons_from_file(datafile,limit=100)
     voc = Voc(corpus_name)
     [voc.addWord(char) for d in data_g for char in d['sentence']]
-    voc.trim(100)
+    voc.trim(10)
     assert '#' in voc.word2index.keys()
     print("Counted words:", voc.num_words)
     # def infinite_data_g():
@@ -338,116 +244,43 @@ def load_prepare_keyword_sentence_data(
         s = ''.join([c if c in voc.word2index else voc.index2word[UNK_token] for c in s])
         return s
 
-    pairs = [(normalizeString(' '.join(d['keywords'])),normalizeString(d['sentence'])) for d in data_io.read_jsons_from_file(datafile)]
-
+    pairs = [(normalizeString(' '.join(d['keywords'])),normalizeString(d['sentence'])) for d in data_io.read_jsons_from_file(datafile,limit=limit)]
+    print('got %d train-samples'%len(pairs))
     def batch2TrainData_fun(voc,pair_batch):
         return batch2TrainData(voc,pair_batch,lambda s:list(s))
 
-    return voc, pairs,batch2TrainData_fun
-
-
-######################################################################
-# Another tactic that is beneficial to achieving faster convergence during
-# training is trimming rarely used words out of our vocabulary. Decreasing
-# the feature space will also soften the difficulty of the function that
-# the model must learn to approximate. We will do this as a two-step
-# process:
-#
-# 1) Trim words used under ``MIN_COUNT`` threshold using the ``voc.trim``
-#    function.
-#
-# 2) Filter out pairs with trimmed words.
-#
+    return voc, pairs,batch2TrainData_fun,normalizeString
 
 MIN_COUNT = 3    # Minimum word count threshold for trimming
 
 def trimRareWords(voc, pairs, MIN_COUNT):
-    # Trim words used under the MIN_COUNT from the voc
     voc.trim(MIN_COUNT)
-    # Filter out pairs with trimmed words
     keep_pairs = []
     for pair in pairs:
         input_sentence = pair[0]
         output_sentence = pair[1]
         keep_input = True
         keep_output = True
-        # Check input sentence
         for word in input_sentence.split(' '):
             if word not in voc.word2index:
                 keep_input = False
                 break
-        # Check output sentence
         for word in output_sentence.split(' '):
             if word not in voc.word2index:
                 keep_output = False
                 break
 
-        # Only keep pairs that do not contain trimmed word(s) in their input or output sentence
         if keep_input and keep_output:
             keep_pairs.append(pair)
 
     print("Trimmed from {} pairs to {}, {:.4f} of total".format(len(pairs), len(keep_pairs), len(keep_pairs) / len(pairs)))
     return keep_pairs
 
-
-# Trim voc and pairs
-
-
-######################################################################
-# Prepare Data for Models
-# -----------------------
-#
-# Although we have put a great deal of effort into preparing and massaging our
-# data into a nice vocabulary object and list of sentence pairs, our models
-# will ultimately expect numerical torch tensors as inputs. One way to
-# prepare the processed data for the models can be found in the `seq2seq
-# translation
-# tutorial <https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html>`__.
-# In that tutorial, we use a batch size of 1, meaning that all we have to
-# do is convert the words in our sentence pairs to their corresponding
-# indexes from the vocabulary and feed this to the models.
-#
-# However, if you’re interested in speeding up training and/or would like
-# to leverage GPU parallelization capabilities, you will need to train
-# with mini-batches.
-#
-# Using mini-batches also means that we must be mindful of the variation
-# of sentence length in our batches. To accomodate sentences of different
-# sizes in the same batch, we will make our batched input tensor of shape
-# *(max_length, batch_size)*, where sentences shorter than the
-# *max_length* are zero padded after an *EOS_token*.
-#
-# If we simply convert our English sentences to tensors by converting
-# words to their indexes(\ ``indexesFromSentence``) and zero-pad, our
-# tensor would have shape *(batch_size, max_length)* and indexing the
-# first dimension would return a full sequence across all time-steps.
-# However, we need to be able to index our batch along time, and across
-# all sequences in the batch. Therefore, we transpose our input batch
-# shape to *(max_length, batch_size)*, so that indexing across the first
-# dimension returns a time step across all sentences in the batch. We
-# handle this transpose implicitly in the ``zeroPadding`` function.
-#
-# .. figure:: /_static/img/chatbot/seq2seq_batches.png
-#    :align: center
-#    :alt: batches
-#
-# The ``inputVar`` function handles the process of converting sentences to
-# tensor, ultimately creating a correctly shaped zero-padded tensor. It
-# also returns a tensor of ``lengths`` for each of the sequences in the
-# batch which will be passed to our decoder later.
-#
-# The ``outputVar`` function performs a similar function to ``inputVar``,
-# but instead of returning a ``lengths`` tensor, it returns a binary mask
-# tensor and a maximum target sentence length. The binary mask tensor has
-# the same shape as the output target tensor, but every element that is a
-# *PAD_token* is 0 and all others are 1.
-#
-# ``batch2TrainData`` simply takes a bunch of pairs and returns the input
-# and target tensors using the aforementioned functions.
-#
-
-def indexesFromSentence(voc, sentence,tokenize_fun=lambda x:x.split(' ')):
+def indexesFromSentence(voc, sentence,tokenize_fun=lambda x:list(x)):
     return [voc.word2index[word] for word in tokenize_fun(sentence)] + [EOS_token]
+
+# def indexesFromSentence(voc, sentence,tokenize_fun=lambda x:x.split(' ')):
+#     return [voc.word2index[word] for word in tokenize_fun(sentence)] + [EOS_token]
 
 
 def zeroPadding(l, fillvalue=PAD_token):
@@ -464,7 +297,6 @@ def binaryMatrix(l, value=PAD_token):
                 m[i].append(1)
     return m
 
-# Returns padded input sequence tensor and lengths
 def inputVar(l, voc,tokenize_fun):
     indexes_batch = [indexesFromSentence(voc, sentence,tokenize_fun) for sentence in l]
     lengths = torch.tensor([len(indexes) for indexes in indexes_batch])
@@ -472,7 +304,6 @@ def inputVar(l, voc,tokenize_fun):
     padVar = torch.LongTensor(padList)
     return padVar, lengths
 
-# Returns padded target sequence tensor, padding mask, and max target length
 def outputVar(l, voc,tokenize_fun):
     indexes_batch = [indexesFromSentence(voc, sentence,tokenize_fun) for sentence in l]
     max_target_len = max([len(indexes) for indexes in indexes_batch])

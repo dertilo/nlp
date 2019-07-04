@@ -14,8 +14,9 @@ from io import open
 import itertools
 import math
 
-from chatterbot.getting_processing_data import SOS_token, MAX_LENGTH
-from chatterbot.models import EncoderRNN, LuongAttnDecoderRNN
+from seq2seq.evaluation import evaluate, GreedySearchDecoder
+from seq2seq.getting_processing_data import SOS_token
+from seq2seq.models import EncoderRNN, LuongAttnDecoderRNN
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -106,7 +107,7 @@ def maskNLLLoss(inp, target, mask):
 #
 teacher_forcing_ratio = 1.0
 
-def trainIters(model_name, voc, pairs, batch2TrainData,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
+def trainIters(model_name, voc, pairs, batch2TrainData,normalizeString_fun,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
                corpus_name,
                batch_size=64,
                clip = 50.0,
@@ -198,6 +199,17 @@ def trainIters(model_name, voc, pairs, batch2TrainData,encoder:EncoderRNN, decod
             print_loss_avg = print_loss / print_every
             print("Iteration: {}; Percent complete: {:.1f}%; Average loss: {:.4f}".format(iteration, iteration / n_iteration * 100, print_loss_avg))
             print_loss = 0
+            encoder.eval()
+            decoder.eval()
+            searcher = GreedySearchDecoder(encoder, decoder)
+            for input_sentence in ['Embedding Matrix', 'Measure Evaluation','Deep Learning Machine']:
+                input_sentence = normalizeString_fun(input_sentence)
+                output_words = evaluate(searcher, voc, input_sentence,max_length=100)
+                output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
+                print('Input: %s; Bot: %s'%(input_sentence,''.join(output_words)))
+
+            encoder.train()
+            decoder.train()
 
         if (iteration % save_every == 0):
             directory = os.path.join(save_dir, model_name, corpus_name, '{}-{}_{}'.format(encoder.n_layers, decoder.n_layers, encoder.hidden_size))
