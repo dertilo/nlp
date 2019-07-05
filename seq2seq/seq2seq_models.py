@@ -104,7 +104,7 @@ import torch.nn.functional as F
 #
 
 class EncoderRNN(nn.Module):
-    def __init__(self, hidden_size, embedding, n_layers=1, dropout=0):
+    def __init__(self, hidden_size, embedding:nn.Embedding, n_layers=1, dropout=0):
         super(EncoderRNN, self).__init__()
         self.n_layers = n_layers
         self.hidden_size = hidden_size
@@ -112,10 +112,14 @@ class EncoderRNN(nn.Module):
 
         # Initialize GRU; the input_size and hidden_size params are both set to 'hidden_size'
         #   because our input size is a word embedding with number of features == hidden_size
-        self.gru = nn.GRU(hidden_size, hidden_size, n_layers,
+        self.gru = nn.GRU(self.embedding.embedding_dim, hidden_size, n_layers,
                           dropout=(0 if n_layers == 1 else dropout), bidirectional=True)
 
     def forward(self, input_seq, input_lengths, hidden=None):
+        assert hidden is None
+        if self.training:
+            input_lengths = input_lengths.squeeze(0)
+        assert input_seq.shape[1]==input_lengths.shape[0]
         # Convert word indexes to embeddings
         embedded = self.embedding(input_seq)
         # Pack padded batch of sequences for RNN module
@@ -281,7 +285,7 @@ class LuongAttnDecoderRNN(nn.Module):
 
         self.embedding = embedding
         self.embedding_dropout = nn.Dropout(dropout)
-        self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=(0 if n_layers == 1 else dropout))
+        self.gru = nn.GRU(self.embedding.embedding_dim, hidden_size, n_layers, dropout=(0 if n_layers == 1 else dropout))
         self.concat = nn.Linear(hidden_size * 2, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
 
@@ -306,5 +310,7 @@ class LuongAttnDecoderRNN(nn.Module):
         # Predict next word using Luong eq. 6
         output = self.out(concat_output)
         output = F.softmax(output, dim=1)
+        if self.training:
+            output = output.permute(1,0)
         # Return output and final hidden state
         return output, hidden

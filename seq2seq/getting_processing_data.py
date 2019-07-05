@@ -45,10 +45,10 @@ import math
 # language formality, time periods, sentiment, etc. Our hope is that this
 # diversity makes our model robust to many forms of inputs and queries.
 
-base_path = 'chatterbot'
-corpus_name = "cornell movie-dialogs corpus"
-corpus = os.path.join(base_path+"/data", corpus_name)
-save_dir = os.path.join(base_path+"/data", "save")
+# base_path = 'chatterbot'
+# corpus_name = "cornell movie-dialogs corpus"
+# corpus = os.path.join(base_path+"/data", corpus_name)
+# save_dir = os.path.join(base_path+"/data", "save")
 
 def loadLines(fileName, fields):
     lines = {}
@@ -188,8 +188,9 @@ def batch2TrainData(voc:Voc, pair_batch,tokenize_fun=lambda x:x.split(' ')):
     return inp, lengths, output, mask, max_target_len
 
 def loadPrepareData(corpus_name = "cornell movie-dialogs corpus",
-                    datafile = os.path.join(corpus, "formatted_movie_lines.txt")
+                    datafile = None#os.path.join(corpus, "formatted_movie_lines.txt")
                     ):
+    assert False # TODO(tilo)
     print("Start preparing training data ...")
     voc, pairs = readVocs(datafile, corpus_name)
     print("Read {!s} sentence pairs".format(len(pairs)))

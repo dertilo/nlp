@@ -32,6 +32,8 @@ import torch.nn as nn
 #    6) Return collections of word tokens and scores.
 #
 from seq2seq.getting_processing_data import MAX_LENGTH, indexesFromSentence, SOS_token
+from seq2seq.seq2seq_dataprocessor import GAP
+from text_classification.classifiers.common import DataProcessorInterface
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda" if USE_CUDA else "cpu")
@@ -73,16 +75,21 @@ def evaluate(searcher, voc, sentence, max_length=MAX_LENGTH):
     return decoded_words
 
 
-def interactive_chat(searcher, voc,normalizeString_fun):
+def interactive_chat(searcher, dp:DataProcessorInterface):
 
     while(1):
         # try:
         input_sentence = input('> ')
         if input_sentence == 'q' or input_sentence == 'quit': break
-        input_sentence = normalizeString_fun(input_sentence)
-        output_words = evaluate(searcher, voc, input_sentence)
-        output_words[:] = [x for x in output_words if not (x == 'EOS' or x == 'PAD')]
-        print('Bot:', ''.join(output_words))
+
+        input_batch, lengths = dp.transform([input_sentence])
+        input_batch = input_batch.to(device)
+        lengths = lengths.to(device)
+
+        tokens, scores = searcher(input_batch, lengths, MAX_LENGTH)
+        decoded_words = [dp.voc.index2word[token.item()] for token in tokens]
+        decoded_words = [x for x in decoded_words if not (x == 'EOS' or x == 'PAD')]
+        print('filled by bot: %s' % (input_sentence.replace(GAP, ''.join(decoded_words))))
 
         # except KeyError:
         #     print("Error: Encountered unknown word.")

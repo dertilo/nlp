@@ -6,22 +6,22 @@ from commons import data_io, util_methods
 
 from seq2seq.getting_processing_data import Voc, UNK_token, EOS_token, zeroPadding, binaryMatrix
 from text_classification.classifiers.common import DataProcessorInterface
-GAP = '<GAP>'
+GAP = '_'
 gap_symbol_len=1 # just one integer number
 
 class Seq2GapDataProcessor(DataProcessorInterface):
 
 
     def __init__(self,
-                 seq_len=10
+                 corpus_name="sci-keyword-sentencs",
+                seq_len=20
                  ) -> None:
         super().__init__()
         self.seq_len=seq_len
+        self.voc=Voc(corpus_name)
 
     def fit(self, data_path):
-        corpus_name = "sci-keyword-sentencs"
         line_g = data_io.read_lines_from_files(data_path, limit=100)
-        self.voc = Voc(corpus_name)
         [self.voc.addWord(char) for line in line_g for char in line]
         self.voc.trim(10)
         self.voc.addWord(GAP)
@@ -32,6 +32,7 @@ class Seq2GapDataProcessor(DataProcessorInterface):
     def transform(self, data):
         inputts=[]
         for sample in data:
+            assert len(sample.split(GAP))==2
             left_context, right_context = sample.split(GAP)
             inputts.append([self.voc.word2index[symbol] for symbol in list(left_context) + [GAP] + list(right_context)])
 
@@ -46,7 +47,7 @@ class Seq2GapDataProcessor(DataProcessorInterface):
         mask = binaryMatrix(padList)
         mask = torch.ByteTensor(mask)
         target_variable = torch.LongTensor(padList)
-        return input_variable, lengths, mask, max_target_len, target_variable
+        return input_variable, lengths, target_variable, mask, max_target_len
 
     def tensorfy_input(self, in_seq_batch):
         lengths = torch.tensor([len(indexes) for indexes in in_seq_batch])
@@ -61,13 +62,14 @@ class Seq2GapDataProcessor(DataProcessorInterface):
             return s
 
         def build_batch_generator(batch_size):
-
+            def replace_if_gap(char:str):
+                return '-' if char==GAP else char
             def carve_a_gap(char_g):
-                gap_len = random.randint(0, 5)
+                gap_len = random.randint(2, 9)
                 start_ind = random.randint(0, self.seq_len-gap_len-gap_symbol_len)
-                left_context = [next(char_g) for _ in range(start_ind)]
-                gap = [next(char_g) for _ in range(gap_len)]
-                right_context = [next(char_g) for _ in range(self.seq_len-start_ind-gap_symbol_len)]
+                left_context = [replace_if_gap(next(char_g)) for _ in range(start_ind)]
+                gap = [replace_if_gap(next(char_g)) for _ in range(gap_len)]
+                right_context = [replace_if_gap(next(char_g)) for _ in range(self.seq_len-start_ind-gap_symbol_len)]
                 inputt = [self.voc.word2index[symbol] for symbol in left_context+[GAP]+right_context]
                 outputt = [self.voc.word2index[symbol] for symbol in gap]+[EOS_token]
                 assert len(inputt)==self.seq_len
@@ -99,10 +101,7 @@ class Seq2GapDataProcessor(DataProcessorInterface):
             in_seq_batch = [s for s,_ in batch]
             out_seq_batch = [s for _,s in batch]
 
-            input_variable, lengths, mask, max_target_len, target_variable = self.tensorfy(in_seq_batch,
-                                                                                              out_seq_batch)
-
-            return input_variable, lengths, target_variable, mask, max_target_len
+            return self.tensorfy(in_seq_batch,out_seq_batch)
 
         return get_batch
 

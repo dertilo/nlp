@@ -109,7 +109,7 @@ def maskNLLLoss(inp, target, mask):
 #   sequential models can be very straightforward.
 #
 #
-teacher_forcing_ratio = .5
+teacher_forcing_ratio = .9
 
 def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRNN, decoder:LuongAttnDecoderRNN, save_dir,
                corpus_name,
@@ -120,21 +120,24 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
                n_iteration = 4000,
                print_every = 1,
                save_every = 500,
-               loadFilename=None,checkpoint=None):
+                encoder_optimizer_sd=None,
+                decoder_optimizer_sd=None,
+               ):
 
     encoder.train()
     decoder.train()
 
-    encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate * decoder_learning_ratio)
+    encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=learning_rate)
+    decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=learning_rate * decoder_learning_ratio)
 
     print_loss = 0
-    if loadFilename and checkpoint:
-        encoder_optimizer_sd = checkpoint['en_opt']
-        decoder_optimizer_sd = checkpoint['de_opt']
+    if encoder_optimizer_sd is not None:
         encoder_optimizer.load_state_dict(encoder_optimizer_sd)
+    if decoder_optimizer_sd is not None:
         decoder_optimizer.load_state_dict(decoder_optimizer_sd)
 
+    encoder_parallel = DataParallel(encoder,dim=1)
+    decoder_parallel = DataParallel(decoder,dim=1)
     def train_on_batch(training_batch):
         input_variable, lengths, target_variable, mask, max_target_len = training_batch
 
@@ -150,7 +153,7 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
         print_losses = []
         n_totals = 0
 
-        encoder_outputs, encoder_hidden = encoder(input_variable, lengths)
+        encoder_outputs, encoder_hidden = encoder_parallel(input_variable, lengths.unsqueeze(0))
 
         decoder_input = torch.LongTensor([[SOS_token for _ in range(batch_size)]])
         decoder_input = decoder_input.to(device)
@@ -161,9 +164,10 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
 
         if use_teacher_forcing:
             for t in range(max_target_len):
-                decoder_output, decoder_hidden = decoder(
+                decoder_output, decoder_hidden = decoder_parallel(
                     decoder_input, decoder_hidden, encoder_outputs
                 )
+                decoder_output = decoder_output.permute(1,0)
                 decoder_input = target_variable[t].view(1, -1)
                 mask_loss, nTotal = maskNLLLoss(decoder_output, target_variable[t], mask[t])
                 loss += mask_loss
@@ -171,9 +175,10 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
                 n_totals += nTotal
         else:
             for t in range(max_target_len):
-                decoder_output, decoder_hidden = decoder(
+                decoder_output, decoder_hidden = decoder_parallel(
                     decoder_input, decoder_hidden, encoder_outputs
                 )
+                decoder_output = decoder_output.permute(1,0)
                 # No teacher forcing: next input is decoder's own current output
                 _, topi = decoder_output.topk(1)
                 decoder_input = torch.LongTensor([[topi[i][0] for i in range(batch_size)]])
@@ -192,7 +197,9 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
         decoder_optimizer.step()
 
         return sum(print_losses) / n_totals
+
     get_batch_fun = dp.build_get_batch_fun(data_path,batch_size=batch_size)
+
     for iteration in range(n_iteration + 1):
         training_batch = get_batch_fun()
 
@@ -206,7 +213,8 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
             encoder.eval()
             decoder.eval()
             searcher = GreedySearchDecoder(encoder, decoder)
-            for input_sentence in ['The Embedd%strix'%GAP, 'evaluati%sric'%GAP,'Dee%sarning'%GAP]:
+            to_print=[]
+            for input_sentence in ['The Embedd%strix'%GAP, 'evaluati%sric'%GAP,'Dee%sarning'%GAP,'Natu%suage'%GAP,'The%sen'%GAP]:
                 input_batch, lengths = dp.transform([input_sentence])
                 input_batch = input_batch.to(device)
                 lengths = lengths.to(device)
@@ -214,7 +222,8 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
                 tokens, scores = searcher(input_batch, lengths, MAX_LENGTH)
                 decoded_words = [dp.voc.index2word[token.item()] for token in tokens]
                 decoded_words = [x for x in decoded_words if not (x == 'EOS' or x == 'PAD')]
-                print('Input: %s; Bot: %s'%(input_sentence,''.join(decoded_words)))
+                to_print.append('Input: %s; filled: %s' % (input_sentence, input_sentence.replace(GAP, ''.join(decoded_words))))
+            print('|'.join(to_print))
 
             encoder.train()
             decoder.train()
@@ -232,4 +241,4 @@ def trainIters(model_name, dp:DataProcessorInterface,data_path,encoder:EncoderRN
                 'loss': loss,
                 'voc_dict': dp.voc.__dict__,
                 'embedding': encoder.embedding.state_dict()
-            }, os.path.join(directory, '{}_{}.tar'.format(iteration, 'checkpoint')))
+            }, os.path.join(directory, '{}_{}.tar'.format('model', 'checkpoint')))
