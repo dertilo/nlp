@@ -50,7 +50,7 @@ def id_from_filename(file):
 if __name__ == '__main__':
     # ip = 'localhost'
     ip = '10.1.1.29'
-    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
     table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
     num_anno_docs = 10
     brat_path='/home/tilo/data/brat-data/scierc'

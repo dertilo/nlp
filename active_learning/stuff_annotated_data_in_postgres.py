@@ -8,7 +8,7 @@ from sqlalchemy_util.sqlalchemy_methods import insert_or_update, get_tables_by_r
 if __name__ == '__main__':
     # ip = 'localhost'
     ip = '10.1.1.29'
-    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
 
     data = data_io.read_jsons_from_file('/home/tilo/code/NLP/scisci_nlp/data/scierc_data/json/train.json')
     data = ({**{'id':json.dumps(d.pop('doc_key'))},**d} for d in data)

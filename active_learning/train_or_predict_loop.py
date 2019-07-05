@@ -66,7 +66,7 @@ if __name__ == '__main__':
     start = time.time()
     ip = '10.1.1.29'
     # ip = 'localhost'
-    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
 
     table_name = 'scierc'
     columns = [Column('id', String, primary_key=True)] + [Column(colname, String) for colname in ['sentences','ner','relations','clusters','score']]

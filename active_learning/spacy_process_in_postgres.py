@@ -25,7 +25,7 @@ def process_fun(batch):
 if __name__ == '__main__':
     ip = '10.1.1.29'
     # ip = 'localhost'
-    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base,sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
 
     arxiv_table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['arxiv']
     # scierc_table = get_tables_by_reflection(sqlalchemy_base.metadata,sqlalchemy_engine)['scierc']
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     q = select([arxiv_table.c.id,arxiv_table.c.pdf_full_text]).where(arxiv_table.c.pdf_full_text.isnot(None)).limit(30)
     def process_to_str(doc):
-        return json.dumps([[tok.text for tok in sent]for sent in doc.sents])
+        return json.dumps([[tok.text for tok in sent] for sent in doc.sents])
     batch_size = 14
     pure_spacy_time=0
     start = time()

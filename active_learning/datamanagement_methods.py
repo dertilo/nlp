@@ -227,7 +227,7 @@ def parse_anno_lines(lines:List[str],sentences:List[List[str]]):
 def unittest_parse_brat_annotations():
     # ip = '10.1.1.29'
     ip = 'localhost'
-    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
     table = get_tables_by_reflection(sqlalchemy_base.metadata, sqlalchemy_engine)['scierc']
     brat_path = './brat_configurations'
     # write_brat_annotations(select([table]).limit(3), brat_path, sqlalchemy_engine)
@@ -251,7 +251,7 @@ def dump_table_to_jsonl(
         limit=100
     ):
     # ip = 'localhost'
-    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(ip=ip)
+    sqlalchemy_base, sqlalchemy_engine = get_sqlalchemy_base_engine(host=ip)
     table = get_tables_by_reflection(sqlalchemy_base.metadata, sqlalchemy_engine)[table_name]
     q = select([table]).limit(limit)
     g = (row_to_dict(d) for batch in fetchmany_sqlalchemy(sqlalchemy_engine, q, batch_size=10000) for d in batch)
