@@ -242,7 +242,9 @@ if __name__ == '__main__':
         ['O','O','O','B-LOC','O','O','O','B-PER','I-PER','O','O'],
         ['O','O','O','B-ORG','O','B-ORG','O','O','O','B-PER','I-PER','O','O']
     ]
-    calc_print_prefixed_seqtag_metrics(gold, pred, ['PER', 'ORG'])
+    p,r,f=spanwise_pr_re_f1(pred,gold)
+    print(f)
+    # calc_print_prefixed_seqtag_metrics(gold, pred, ['PER', 'ORG'])
     # tags = ['O','O','B-PER','I-PER','L-PER','O','U-ORG','O']
     # print(bilou2bio(tags))
     # print(bio_to_spans(bilou2bio(tags)))

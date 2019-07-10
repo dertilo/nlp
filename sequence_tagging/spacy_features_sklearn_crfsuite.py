@@ -17,11 +17,14 @@ from sequence_tagging.seq_tag_util import bilou2bio, spanwise_pr_re_f1
 
 class SpacyCrfSuiteTagger(object):
 
-    def __init__(self,nlp = spacy.load('en_core_web_sm',disable=['parser'])
+    def __init__(self,
+                 nlp = spacy.load('en_core_web_sm',disable=['parser']),
+                 verbose = False
         ):
         self.spacy_nlp = nlp
         infix_re = re.compile(r'\s')
         self.spacy_nlp.tokenizer = Tokenizer(nlp.vocab, infix_finditer=infix_re.finditer)
+        self.verbose = verbose
 
     def fit(self,data:List[List[Tuple[str,str]]]):
 
@@ -35,13 +38,15 @@ class SpacyCrfSuiteTagger(object):
 
         start = time()
         processed_data = [self.extract_features_with_spacy([token for token,tag in datum]) for datum in data]
-        print('spacy-processing train-data took: %0.2f'%(time()-start))
+        if self.verbose:
+            print('spacy-processing train-data took: %0.2f'%(time()-start))
 
         self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=0.3, c2=0.5, max_iterations=200, all_possible_transitions=True)
         targets = [[tag for token, tag in datum] for datum in data]
         start = time()
         self.crf.fit(processed_data, targets)
-        print('crfsuite-fitting took: %0.2f'%(time()-start))
+        if self.verbose:
+            print('crfsuite-fitting took: %0.2f'%(time()-start))
 
     def extract_features_with_spacy(self, tokens:List[str]):
         text = ' '.join(tokens)
