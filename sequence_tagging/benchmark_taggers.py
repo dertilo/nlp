@@ -1,4 +1,7 @@
+import logging
 import sys
+from time import time
+
 sys.path.append('.')
 
 from sequence_tagging.flair_scierc_ner import TAG_TYPE, build_flair_sentences
@@ -21,7 +24,7 @@ from flair.data import Sentence, Corpus
 from flair.embeddings import TokenEmbeddings, WordEmbeddings, StackedEmbeddings
 from flair.training_utils import EvaluationMetric
 from torch.utils.data import Dataset
-from flair.trainers import ModelTrainer
+from flair.trainers import ModelTrainer, trainer
 from flair.models import SequenceTagger
 
 
@@ -65,7 +68,7 @@ def score_flair_tagger(
     trainer.train('%s' % save_path, EvaluationMetric.MICRO_F1_SCORE,
                   learning_rate=0.01,
                   mini_batch_size=32,
-                  max_epochs=2,
+                  max_epochs=9,
                   save_final_model=False
                   )
     # plotter = Plotter()
@@ -102,15 +105,19 @@ if __name__ == '__main__':
     sentences = [sent for jsonl_file in ['train.json','dev.json','test.json']
                  for d in data_io.read_jsons_from_file('%s/%s' % (data_path,jsonl_file))
                  for sent in build_flair_sentences(d)]
-
-    splitter = ShuffleSplit(n_splits=3, test_size=0.2, random_state=111)
+    num_folds = 5
+    splitter = ShuffleSplit(n_splits=num_folds, test_size=0.2, random_state=111)
     splits = [(train,train[:round(len(train)/5)],test) for train,test in splitter.split(X=range(len(sentences)))]
-
+    start = time()
     m_scores_std_scores = calc_mean_std_scores(sentences, score_spacycrfsuite_tagger, splits)
-    print('spacy+crfsuite-tagger')
+    print('spacy+crfsuite-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
     pprint(m_scores_std_scores)
 
+    logger = trainer.log
+    logger.setLevel(logging.WARNING)
+
+    start = time()
     m_scores_std_scores = calc_mean_std_scores(sentences, score_flair_tagger, splits)
-    print('flair-tagger')
+    print('flair-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
     pprint(m_scores_std_scores)
 
