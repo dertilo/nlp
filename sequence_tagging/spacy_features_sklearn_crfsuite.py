@@ -19,9 +19,9 @@ class SpacyCrfSuiteTagger(object):
 
     def __init__(self,nlp = spacy.load('en_core_web_sm',disable=['parser'])
         ):
-        self.nlp = nlp
+        self.spacy_nlp = nlp
         infix_re = re.compile(r'\s')
-        self.nlp.tokenizer = Tokenizer(nlp.vocab,infix_finditer=infix_re.finditer)
+        self.spacy_nlp.tokenizer = Tokenizer(nlp.vocab, infix_finditer=infix_re.finditer)
 
     def fit(self,data:List[List[Tuple[str,str]]]):
 
@@ -47,7 +47,7 @@ class SpacyCrfSuiteTagger(object):
         text = ' '.join(tokens)
 
         try:
-            doc = self.nlp(text)
+            doc = self.spacy_nlp(text)
             assert len(doc) == len(tokens)
             features = [
                 {'text': token.text, 'lemma': token.lemma_, 'pos': token.pos_,
@@ -120,8 +120,15 @@ if __name__ == '__main__':
     pprint('test-f1-spanwise: %0.2f'%f1)
 
 '''
-UD_English_data
+# UD_English_data
 spacy-processing train-data took: 66.69
 crfsuite-fitting took: 31.05
     'test-f1-macro: 0.70'
+# SCIERC    
+'train-f1-macro: 0.76'
+'train-f1-micro: 0.91'
+'train-f1-spanwise: 0.73'
+'test-f1-macro: 0.53'
+'test-f1-micro: 0.82'
+'test-f1-spanwise: 0.48'
 '''
