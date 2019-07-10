@@ -5,13 +5,12 @@ from sklearn.model_selection import StratifiedShuffleSplit, ShuffleSplit
 
 
 def score_splits(scorer,data,splits):
-    def calc_scores(train_idx, test_idx):
-        train_data = [data[i] for i in train_idx]
-        test_data = [data[i] for i in test_idx]
-        scoring = scorer(train_data, test_data)
+    def calc_scores(split_indices):
+        data_splits = [[data[i] for i in split] for split in split_indices]
+        scoring = scorer(*data_splits)
         return scoring
 
-    return [calc_scores(train_idx,test_idx) for train_idx,test_idx in splits]
+    return [calc_scores(split) for split in splits]
 
 def imputed(x):
     return np.NaN if isinstance(x,str) else x
