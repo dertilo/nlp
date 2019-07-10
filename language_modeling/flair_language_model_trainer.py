@@ -249,6 +249,7 @@ class LanguageModelTrainer:
         max_epochs: int = 1000,
         checkpoint: bool = False,
         grow_to_sequence_length: int = 0,
+        use_dataparallel=False,
         **kwargs,
     ):
 
@@ -330,8 +331,10 @@ class LanguageModelTrainer:
 
                     # reset variables
                     hidden = self.model.init_hidden(mini_batch_size)
-
-                    parallel_model = nn.DataParallel(self.model)
+                    if use_dataparallel:
+                        parallel_model = nn.DataParallel(self.model,dim=1)
+                    else:
+                        parallel_model = self.model
 
                     # not really sure what this does
                     ntokens = len(self.corpus.dictionary)
@@ -355,16 +358,7 @@ class LanguageModelTrainer:
                         optimizer.zero_grad()
 
                         # do the forward pass in the model
-                        use_dataparallel=True
-                        if use_dataparallel:
-                            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
-                            data = data.permute(1, 0)
-                        output, rnn_output, hidden = parallel_model.forward(data, hidden,parallel=True)
-
-                        if use_dataparallel:
-                            output = output.permute(1,0,2)
-                            hidden = tuple([h.permute(1, 0, 2) for h in hidden])
-
+                        output, rnn_output, hidden = parallel_model.forward(data, hidden)
 
                         # try to predict the targets
                         loss = self.loss_function(output.contiguous().view(-1, ntokens), targets)
