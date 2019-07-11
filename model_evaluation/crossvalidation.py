@@ -1,3 +1,5 @@
+import multiprocessing
+from functools import partial
 from typing import List
 import numpy as np
 from commons.util_methods import get_dict_paths, get_val, set_val
@@ -52,4 +54,33 @@ def calc_mean_std_scores(
     m_scores, std_scores = calc_mean_and_std(scores)
     return {'m_scores':m_scores,
             'std_scores':std_scores}
+
+def init_fun(data_supplier,score_fun):
+    global job
+    job = ScorerJob(data_supplier,score_fun)
+
+def call_job(args):
+    return job(args)
+
+class ScorerJob(object):
+
+    def __init__(self,data_supplier,score_fun) -> None:
+        super().__init__()
+        self.data = data_supplier()
+        self.score_fun = score_fun
+
+    def __call__(self, splits):
+        return self.score_fun(splits,self.data)
+
+def calc_mean_std_scores_parallel(
+        data_supplier,
+        score_fun,
+        splits,
+        n_jobs=1
+    ):
+    with multiprocessing.Pool(processes=n_jobs, initializer=init_fun,initargs=(data_supplier,score_fun)) as p:
+        scores = list(p.imap_unordered(call_job,splits))
+
+    m_scores, std_scores = calc_mean_and_std(scores)
+    return {'m_scores':m_scores,'std_scores':std_scores}
 
