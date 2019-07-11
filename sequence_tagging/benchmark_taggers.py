@@ -1,8 +1,13 @@
+import json
 import logging
 import sys
+sys.path.append('.')
+
+from functools import partial
 from time import time
 
-sys.path.append('.')
+from model_evaluation.hyperparameter_optimization import tune_hyperparams
+
 
 from sequence_tagging.flair_scierc_ner import TAG_TYPE, build_flair_sentences
 from sequence_tagging.seq_tag_util import spanwise_pr_re_f1, bilou2bio
@@ -78,11 +83,11 @@ def score_flair_tagger(
     # calc_print_f1_scores(tagger,corpus.train,corpus.test,tag_name=TAG_TYPE)
     return {'f1-train':train_f1,'f1-test':test_f1}
 
-def score_spacycrfsuite_tagger(train_data,dev_data,test_data):
+def score_spacycrfsuite_tagger(train_data,dev_data,test_data,params):
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
     test_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in test_data]
 
-    tagger = SpacyCrfSuiteTagger()
+    tagger = SpacyCrfSuiteTagger(**params)
     tagger.fit(train_data)
 
     y_pred = tagger.predict([[token for token, tag in datum] for datum in train_data])
@@ -101,23 +106,52 @@ def score_spacycrfsuite_tagger(train_data,dev_data,test_data):
 if __name__ == '__main__':
     # data_path = '/home/tilo/code/NLP/scisci_nlp/data/scierc_data/json/'
     data_path = '../scierc_data/json/'
+    def get_data():
+        sentences = [sent for jsonl_file in ['train.json','dev.json','test.json']
+                     for d in data_io.read_jsons_from_file('%s/%s' % (data_path,jsonl_file))
+                     for sent in build_flair_sentences(d)]
+        return sentences
 
-    sentences = [sent for jsonl_file in ['train.json','dev.json','test.json']
-                 for d in data_io.read_jsons_from_file('%s/%s' % (data_path,jsonl_file))
-                 for sent in build_flair_sentences(d)]
-    num_folds = 5
-    splitter = ShuffleSplit(n_splits=num_folds, test_size=0.2, random_state=111)
-    splits = [(train,train[:round(len(train)/5)],test) for train,test in splitter.split(X=range(len(sentences)))]
-    start = time()
-    m_scores_std_scores = calc_mean_std_scores(sentences, score_spacycrfsuite_tagger, splits)
-    print('spacy+crfsuite-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
-    pprint(m_scores_std_scores)
+    def score_fun(data,**params):
+        splitter = ShuffleSplit(n_splits=3, test_size=0.2, random_state=111)
+        splits = [(train,train[:10],test) for train,test in splitter.split(X=range(len(data)))]
+        m_scores_std_scores = calc_mean_std_scores(data, partial(score_spacycrfsuite_tagger,params=params), splits)
+        print('%s; f1-score: %0.2f' % (json.dumps(params), m_scores_std_scores['m_scores']['f1-test']))
+        return m_scores_std_scores['m_scores']
 
-    logger = trainer.log
-    logger.setLevel(logging.WARNING)
+    from hyperopt import hp, Trials
+    import numpy as np
+    space = {
+        'c1': hp.loguniform('c1', np.log(10) * -6, 0),
+        'c2': hp.loguniform('c2', np.log(10) * -6, 0),
+    }
 
-    start = time()
-    m_scores_std_scores = calc_mean_std_scores(sentences, score_flair_tagger, splits)
-    print('flair-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
-    pprint(m_scores_std_scores)
+    best,trials = tune_hyperparams(
+        data_supplier=get_data,
+        metric_for_hyperopt='f1-test',
+        max_evals=9,
+        score_fun=score_fun,
+        search_space=space,
+        trials=Trials()
+    )
+
+    for t in trials.results:
+        print('loss: %0.2f; f1-micro: %0.2f; params: %s'%(t['loss'],t['mean-metrics']['f1-test'], json.dumps(t['hyperparams'])))
+    print(best)
+
+    # num_folds = 5
+    # splitter = ShuffleSplit(n_splits=num_folds, test_size=0.2, random_state=111)
+    # splits = [(train,train[:round(len(train)/5)],test) for train,test in splitter.split(X=range(len(sentences)))]
+    # start = time()
+    # m_scores_std_scores = calc_mean_std_scores(sentences, score_spacycrfsuite_tagger, splits)
+    # print('spacy+crfsuite-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
+    # pprint(m_scores_std_scores)
+    #
+    # logger = trainer.log
+    # logger.setLevel(logging.WARNING)
+    #
+    # start = time()
+    # m_scores_std_scores = calc_mean_std_scores(sentences, score_flair_tagger, splits)
+    # print('flair-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
+    # pprint(m_scores_std_scores)
 
