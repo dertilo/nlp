@@ -1,23 +1,16 @@
 import json
-from collections import Counter
-from pprint import pprint
-from time import time
-from typing import List, Dict, Callable
 
-import hyperopt
 import numpy as np
-from hyperopt import Trials, STATUS_OK, fmin, tpe, hp
-from sklearn import metrics
-from sklearn.datasets import fetch_20newsgroups
+from hyperopt import Trials, hp
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
 from sklearn.model_selection import ShuffleSplit
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
+from sklearn.preprocessing import MultiLabelBinarizer
 
 from model_evaluation.classification_metrics import calc_classification_metrics
-from model_evaluation.crossvalidation import calc_mean_std_scores, calc_mean_and_std
-from text_classification.data_readers import get_20newsgroups_data, get_GermEval2017_TaskB_data
+from model_evaluation.crossvalidation import calc_mean_and_std
+from model_evaluation.hyperparameter_optimization import tune_hyperparams
+from text_classification.data_readers import get_20newsgroups_data
 import re
 
 
@@ -37,41 +30,9 @@ def text_to_bow(text):
     return regex_tokenizer(text)
 
 
-def initialize_globals(worker_id, dataset_builder):
-    #     torch.manual_seed(12345)
-    global global_dataset
-    global_dataset = dataset_builder(worker_id)
-
-
 # needs pip install networkx==1.11!! TODO(tilo): why where?
-def tune_hyperparams(
-        init_fun,
-                     search_space:Dict,
-                     score_fun,
-                     max_evals = 9,
-                     trials = Trials(),
-                    metric_for_hyperopt='accuracy',
-                     n_jobs=5
-    ):
-    initialize_globals(None,init_fun)
-    def objective(params_dict):
-        start = time()
-        metrics = score_fun(**params_dict)
-        score = metrics[metric_for_hyperopt]
-        return {'loss': -score,
-                'status': STATUS_OK,
-                'mean-metrics':metrics,
-                'crossval_duration_in_s': time()-start,
-                'hyperparams': params_dict
-                }
 
-    # start = time()
-    _ = fmin(objective, search_space, algo=tpe.suggest, max_evals=max_evals, trials=trials)
-    # duration = time() -start
-    min_loss,best_hyperparams = min([(t['loss'],t['hyperparams']) for t in trials.results],key=lambda x:x[0])
-    return best_hyperparams,trials
-
-def score_tfidf_classifier(alpha=0.0001,loss='log',penalty='elasticnet',l1_ratio=0.15):
+def score_tfidf_classifier(data_train, alpha=0.0001,loss='log',penalty='elasticnet',l1_ratio=0.15):
     vectorizer = TfidfVectorizer(sublinear_tf=True,
                                  preprocessor=identity_dummy_method,
                                  tokenizer=identity_dummy_method,
@@ -81,7 +42,6 @@ def score_tfidf_classifier(alpha=0.0001,loss='log',penalty='elasticnet',l1_ratio
                                  max_features=30000,
                                  stop_words=None#'english'
                                  )
-    data_train = global_dataset
 
     vectorized_data = vectorizer.fit_transform([text_to_bow(text) for text, _ in data_train])
 
@@ -125,12 +85,8 @@ if __name__ == '__main__':
         'l1_ratio': hp.loguniform('l1_ratio', np.log(10) * -6, 0),
     }
 
-    init_fun = lambda args: get_20newsgroups_data('train')
-
-    # initialize_globals(None,init_fun)
-    # print(score_tfidf_classifier())
     best,trials = tune_hyperparams(
-        init_fun=init_fun,
+        data_supplier=lambda : get_20newsgroups_data('train'),
         max_evals=2,
         score_fun=score_tfidf_classifier,
         search_space=space,
