@@ -5,6 +5,8 @@ import numpy as np
 from commons.util_methods import get_dict_paths, get_val, set_val
 from sklearn.model_selection import StratifiedShuffleSplit, ShuffleSplit
 
+from non_daemon_pool import NonDaemonPool
+
 
 def score_splits(scorer,data,splits):
     def calc_scores(split_indices):
@@ -52,6 +54,14 @@ def init_fun(data_supplier,score_fun):
 def call_job(args):
     return job(args)
 
+global_data = None
+
+def fun(args,score_fun, data_supplier):
+    global global_data
+    if global_data is None:
+        global_data = data_supplier()
+    return score_fun(args,global_data)
+
 class ScorerJob(object):
 
     def __init__(self,data_supplier,score_fun) -> None:
@@ -69,11 +79,12 @@ def calc_mean_std_scores(
         n_jobs=0
     ):
     if n_jobs>0:
-        with multiprocessing.Pool(processes=n_jobs, initializer=init_fun,initargs=(data_supplier,score_fun)) as p:
-            scores = list(p.imap_unordered(call_job,splits))
+        with NonDaemonPool(processes=n_jobs) as p:
+            scores = [r for r in p.imap_unordered(partial(fun,score_fun=score_fun,data_supplier=data_supplier),splits)]
     else:
         data = data_supplier()
         scores = [score_fun(split,data) for split in splits]
+    assert len(scores) == len(splits)
 
     m_scores, std_scores = calc_mean_and_std(scores)
     return {'m_scores':m_scores,'std_scores':std_scores}
