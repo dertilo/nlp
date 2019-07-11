@@ -45,16 +45,6 @@ def calc_mean_and_std(eval_metrices):
     #     splitter = ShuffleSplit(n_splits=n_splits, test_size=test_size, random_state=111)
     #     splits = [(train,test) for train,test in splitter.split(X=range(len(data)))]
 
-def calc_mean_std_scores(
-        data:List,
-        score_fun,
-        splits,
-    ):
-    scores = score_splits(score_fun,data, splits) # TODO: this can fail if to few labels and splitter splitted unluckily
-    m_scores, std_scores = calc_mean_and_std(scores)
-    return {'m_scores':m_scores,
-            'std_scores':std_scores}
-
 def init_fun(data_supplier,score_fun):
     global job
     job = ScorerJob(data_supplier,score_fun)
@@ -72,14 +62,18 @@ class ScorerJob(object):
     def __call__(self, splits):
         return self.score_fun(splits,self.data)
 
-def calc_mean_std_scores_parallel(
+def calc_mean_std_scores(
         data_supplier,
         score_fun,
         splits,
-        n_jobs=1
+        n_jobs=0
     ):
-    with multiprocessing.Pool(processes=n_jobs, initializer=init_fun,initargs=(data_supplier,score_fun)) as p:
-        scores = list(p.imap_unordered(call_job,splits))
+    if n_jobs>0:
+        with multiprocessing.Pool(processes=n_jobs, initializer=init_fun,initargs=(data_supplier,score_fun)) as p:
+            scores = list(p.imap_unordered(call_job,splits))
+    else:
+        data = data_supplier()
+        scores = [score_fun(split,data) for split in splits]
 
     m_scores, std_scores = calc_mean_and_std(scores)
     return {'m_scores':m_scores,'std_scores':std_scores}

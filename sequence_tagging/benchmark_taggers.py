@@ -15,7 +15,7 @@ from sequence_tagging.spacy_features_sklearn_crfsuite import SpacyCrfSuiteTagger
 
 from sklearn.model_selection import ShuffleSplit
 
-from model_evaluation.crossvalidation import calc_mean_std_scores, calc_mean_std_scores_parallel
+from model_evaluation.crossvalidation import calc_mean_std_scores
 from sequence_tagging.evaluate_flair_tagger import calc_train_test_spanwise_f1
 
 
@@ -82,7 +82,10 @@ def score_flair_tagger(
     # calc_print_f1_scores(tagger,corpus.train,corpus.test,tag_name=TAG_TYPE)
     return {'f1-train':train_f1,'f1-test':test_f1}
 
-def score_spacycrfsuite_tagger(train_data,dev_data,test_data,params={}):
+def score_spacycrfsuite_tagger(splits,data,params={'c1':0.5,'c2':0.0}):
+    data_splits = [[data[i] for i in split] for split in splits]
+    train_data,dev_data,test_data = data_splits
+
     train_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in train_data]
     test_data = [[(token.text, token.tags['ner'].value) for token in datum] for datum in test_data]
 
@@ -105,7 +108,7 @@ def tune_hyperparams_spacycrfsuite():
     def score_fun(data, **params):
         splitter = ShuffleSplit(n_splits=3, test_size=0.2, random_state=111)
         splits = [(train, train[:10], test) for train, test in splitter.split(X=range(len(data)))]
-        m_scores_std_scores = calc_mean_std_scores(data, partial(score_spacycrfsuite_tagger, params=params), splits)
+        m_scores_std_scores = calc_mean_std_scores(lambda : data, partial(score_spacycrfsuite_tagger, params=params), splits)
         print('%s; f1-score: %0.2f' % (json.dumps(params), m_scores_std_scores['m_scores']['f1-test']))
         return m_scores_std_scores['m_scores']
 
@@ -131,11 +134,11 @@ def tune_hyperparams_spacycrfsuite():
 
 if __name__ == '__main__':
     def get_data():
-        # data_path = '/home/tilo/code/NLP/scisci_nlp/data/scierc_data/json/'
-        data_path = '../scierc_data/json/'
+        data_path = '/home/tilo/code/NLP/scisci_nlp/data/scierc_data/json/'
+        # data_path = '../data/scierc_data/json/'
         sentences = [sent for jsonl_file in ['train.json','dev.json','test.json']
                      for d in data_io.read_jsons_from_file('%s/%s' % (data_path,jsonl_file))
-                     for sent in build_flair_sentences(d)]
+                     for sent in build_flair_sentences(d)][:200]
         return sentences
 
 
@@ -147,20 +150,17 @@ if __name__ == '__main__':
     num_folds = 5
     splitter = ShuffleSplit(n_splits=num_folds, test_size=0.2, random_state=111)
     splits = [(train,train[:round(len(train)/5)],test) for train,test in splitter.split(X=range(len(sentences)))]
-    start = time()
-    m_scores_std_scores = calc_mean_std_scores(sentences, score_spacycrfsuite_tagger, splits)
-    print('spacy+crfsuite-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
-    pprint(m_scores_std_scores)
-
-    def score_fun(splits,data):
-        data_splits = [[data[i] for i in split] for split in splits]
-        return score_spacycrfsuite_tagger(*data_splits,params={})
+    # start = time()
+    # m_scores_std_scores = calc_mean_std_scores(lambda : sentences, score_spacycrfsuite_tagger, splits)
+    # print('spacy+crfsuite-tagger %d folds took: %0.2f seconds'%(num_folds,time()-start))
+    # pprint(m_scores_std_scores)
 
     start = time()
-    m_scores_std_scores = calc_mean_std_scores_parallel(get_data, score_fun, splits,n_jobs=min(multiprocessing.cpu_count()-1,num_folds))
+    m_scores_std_scores = calc_mean_std_scores(get_data, score_spacycrfsuite_tagger, splits, n_jobs=min(multiprocessing.cpu_count() - 1, num_folds))
     print('spacy+crfsuite-tagger %d folds-PARALLEL took: %0.2f seconds'%(num_folds,time()-start))
     pprint(m_scores_std_scores)
-    #
+
+    # FLAIR
     # logger = trainer.log
     # logger.setLevel(logging.WARNING)
     #
