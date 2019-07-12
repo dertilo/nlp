@@ -19,8 +19,11 @@ class SpacyCrfSuiteTagger(object):
 
     def __init__(self,
                  nlp = spacy.load('en_core_web_sm',disable=['parser']),
-                 verbose = False
+                 verbose = False,
+                 c1=None,
+                 c2=None,
         ):
+        self.c1, self.c2 = c1,c2
         self.spacy_nlp = nlp
         infix_re = re.compile(r'\s')
         self.spacy_nlp.tokenizer = Tokenizer(nlp.vocab, infix_finditer=infix_re.finditer)
@@ -41,7 +44,7 @@ class SpacyCrfSuiteTagger(object):
         if self.verbose:
             print('spacy-processing train-data took: %0.2f'%(time()-start))
 
-        self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=0.3, c2=0.5, max_iterations=200, all_possible_transitions=True)
+        self.crf = sklearn_crfsuite.CRF(algorithm='lbfgs', c1=self.c1, c2=self.c2, max_iterations=200, all_possible_transitions=True)
         targets = [[tag for token, tag in datum] for datum in data]
         start = time()
         self.crf.fit(processed_data, targets)
