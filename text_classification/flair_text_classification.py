@@ -1,15 +1,17 @@
 import sys
-import time
+
+from torch.utils.data import Dataset
 
 sys.path.append('.')
 from scipy.sparse import csr_matrix # TODO(tilo): if not imported before torch it throws: ImportError: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found (required by some-path-here/lib/python3.7/site-packages/scipy/sparse/_sparsetools.cpython-37m-x86_64-linux-gnu.so)
+import time
 
 from pprint import pprint
 from typing import List
 
 import numpy as np
 import torch
-from flair.data import TaggedCorpus, Sentence
+from flair.data import Sentence, Corpus
 from flair.embeddings import WordEmbeddings, FlairEmbeddings, DocumentRNNEmbeddings, DocumentMeanEmbeddings
 from flair.models import TextClassifier
 from flair.trainers import ModelTrainer
@@ -38,14 +40,13 @@ def get_targets(sentences:List[Sentence]):
 if __name__ == '__main__':
     start = time.time()
     t_len = 200
-    sentences_train = build_Sentences(get_20newsgroups_data('train', min_num_tokens=5, max_text_len=t_len))
-    sentences_dev = build_Sentences(get_20newsgroups_data('train', min_num_tokens=5, max_text_len=t_len))
-    sentences_test = build_Sentences(get_20newsgroups_data('test', min_num_tokens=5, max_text_len=t_len))
+    sentences_train:Dataset = build_Sentences(get_20newsgroups_data('train', min_num_tokens=5, max_text_len=t_len))
+    sentences_dev:Dataset = build_Sentences(get_20newsgroups_data('train', min_num_tokens=5, max_text_len=t_len))
+    sentences_test:Dataset = build_Sentences(get_20newsgroups_data('test', min_num_tokens=5, max_text_len=t_len))
 
-    corpus: TaggedCorpus = TaggedCorpus(sentences_train, sentences_dev, sentences_test)
+    corpus: Corpus = Corpus(sentences_train, sentences_dev, sentences_test)
     label_dict = corpus.make_label_dictionary()
     word_embeddings = [WordEmbeddings('glove'),
-
                        # comment in flair embeddings for state-of-the-art results
                        # FlairEmbeddings('news-forward'),
                        # FlairEmbeddings('news-backward'),
