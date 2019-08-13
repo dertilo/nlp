@@ -78,14 +78,20 @@ def calc_mean_std_scores(
         splits,
         n_jobs=0
     ):
-    if n_jobs>0:
-        with NonDaemonPool(processes=n_jobs) as p:
-            scores = [r for r in p.imap_unordered(partial(fun,score_fun=score_fun,data_supplier=data_supplier),splits)]
-    else:
-        data = data_supplier()
-        scores = [score_fun(split,data) for split in splits]
+    scores = calc_scores(data_supplier, score_fun, splits, n_jobs)
     assert len(scores) == len(splits)
 
     m_scores, std_scores = calc_mean_and_std(scores)
     return {'m_scores':m_scores,'std_scores':std_scores}
+
+
+def calc_scores(data_supplier, score_fun, splits, n_jobs):
+    if n_jobs > 0:
+        with NonDaemonPool(processes=n_jobs) as p:
+            scores = [r for r in
+                      p.imap_unordered(partial(fun, score_fun=score_fun, data_supplier=data_supplier), splits)]
+    else:
+        data = data_supplier()
+        scores = [score_fun(split, data) for split in splits]
+    return scores
 
