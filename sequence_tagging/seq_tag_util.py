@@ -1,7 +1,31 @@
 from typing import Tuple, List
 
 import numpy as np
+from sklearn import metrics
 
+
+def calc_seqtag_f1_scores(pred_targets_fun, token_tag_sequences:List[List[Tuple[str, str]]]):
+    assert len(token_tag_sequences)>0
+    y_pred,targets = pred_targets_fun(token_tag_sequences)
+    _,_,f1_train = spanwise_pr_re_f1(y_pred, targets)
+    return {
+        'f1-macro':calc_seqtag_tokenwise_scores(targets, y_pred)['f1-macro'],
+        'f1-micro':calc_seqtag_tokenwise_scores(targets, y_pred)['f1-micro'],
+        'f1-spanwise':f1_train
+    }
+
+def calc_seqtag_tokenwise_scores(gold_seqs, pred_seqs):
+    gold_flattened = [l for seq in gold_seqs for l in seq]
+    pred_flattened = [l for seq in pred_seqs for l in seq]
+    assert len(gold_flattened) == len(pred_flattened) and len(gold_flattened)>0
+    labels = list(set(gold_flattened))
+    scores = {
+        'f1-micro': metrics.f1_score(gold_flattened, pred_flattened, average='micro'),
+        'f1-macro': metrics.f1_score(gold_flattened, pred_flattened, average='macro'),
+        'clf-report': metrics.classification_report(gold_flattened, pred_flattened, target_names=labels, digits=3,
+                                                    output_dict=True),
+    }
+    return scores
 
 def mark_text(text, char_spans):
     sorted_spans = sorted(char_spans, key=lambda sp:-sp[0])
@@ -169,7 +193,7 @@ def spanwise_pr_re_f1(label_pred, label_correct):
     rec = np.sum([x[0] for x in gold_counts]) / np.sum([x[1] for x in gold_counts])
     f1 = 0
     if (rec + prec) > 0:
-        f1 = 2.0 * prec * rec / (prec + rec);
+        f1 = 2.0 * prec * rec / (prec + rec)
     return prec, rec, f1
 
 def prefixed_tag_to_label(tag):
