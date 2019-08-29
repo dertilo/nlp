@@ -55,7 +55,18 @@ def load_qangaroo_dataset(
         data = json.load(data_file)
     return data
 
+def download_coqa(data_dir):
+    data_dir = data_dir+'/coqa'
+    file = 'coqa-train-v1.0.json'
+    dev_file = 'coqa-dev-v1.0.json'
+    base_url = 'https://nlp.stanford.edu/data/coqa'
+    if not os.path.isdir(data_dir):
+        os.mkdir(data_dir)
+        os.system('wget -N -q -P %s %s' % (data_dir, '%s/%s' % (base_url, file)))
+        os.system('wget -N -q -P %s %s' % (data_dir, '%s/%s' % (base_url, dev_file)))
+
 if __name__ == '__main__':
     # download_process_wikiqa()
-    download_natural_questions()
+    # download_natural_questions()
+    download_coqa('/home/tilo/data/QA')
 
